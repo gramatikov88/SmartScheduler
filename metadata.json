@@ -1,0 +1,5 @@
+{
+  "name": "SmartScheduler",
+  "description": "Intelligent school scheduling system with conflict detection and AI optimization.",
+  "requestFramePermissions": []
+}
