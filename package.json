@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@react-pdf/renderer": "^4.3.1",
     "joi": "^18.0.2",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",

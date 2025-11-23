@@ -1,10 +1,10 @@
-
-import React, { useState, useRef, useMemo } from 'react';
-import { ScheduleItem, ClassGroup, Teacher, Room, Subject, GridSlot, DragItem, RoomType, SchoolConfig } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ScheduleItem, ClassGroup, Teacher, Room, Subject, DragItem, RoomType, SchoolConfig } from '../types';
 import { DAYS } from '../constants';
-import { Lock, Unlock, AlertTriangle, Check, BrainCircuit, Sparkles, Loader2, Ban, Info, FileText, Sheet } from 'lucide-react';
+import { Lock, Unlock, BrainCircuit, Sparkles, Loader2, Ban, FileSpreadsheet, FileDown } from 'lucide-react';
 import { analyzeScheduleWithGemini, generateScheduleWithGemini } from '../services/geminiService';
 import { exportService } from '../services/exportService';
+// import { PDFExportButton } from './pdf/PDFExportButton';
 
 interface SchedulerProps {
   schedule: ScheduleItem[];
@@ -410,34 +410,49 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
           <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">Експорт</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-gray-200 shadow-sm flex-wrap justify-center">
+
+              {/* PDF Export Removed as per user request to restore stability */}
+              {/* 
+              <PDFExportButton
+                type="master"
+                schedule={schedule}
+                subjects={subjects}
+                teachers={teachers}
+                rooms={rooms}
+                classes={classes}
+                label="Пълна Програма (PDF)"
+                fileName={`Uchilishna_Programa_${new Date().toISOString().split('T')[0]}.pdf`}
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+              />
+
+              {selectedClassId && (
+                <PDFExportButton
+                  type="class"
+                  data={classes.find(c => c.id === selectedClassId)}
+                  schedule={schedule}
+                  subjects={subjects}
+                  teachers={teachers}
+                  rooms={rooms}
+                  classes={classes}
+                  label="Клас (PDF)"
+                  fileName={`Programa_${classes.find(c => c.id === selectedClassId)?.name || 'Klas'}.pdf`}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                />
+              )}
+              */}
+
+              <div className="w-full h-px bg-gray-100 my-1"></div>
+
               <button
-                onClick={() => exportService.exportClassesPDF(schedule, classes, teachers, rooms, subjects, { startTime: '08:00', lessonDuration: 40, breakDuration: 10, longBreakDuration: 20, longBreakAfterPeriod: 3, totalPeriods: periods.length, customBreaks: {} })}
-                className="flex flex-col items-center justify-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 p-2 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition"
-                title="Експорт на всички класове в PDF"
+                onClick={() => exportService.exportWholeSchoolExcel(schedule, classes, teachers, rooms, subjects, { startTime: '08:00', lessonDuration: 40, breakDuration: 10, longBreakDuration: 20, longBreakAfterPeriod: 3, totalPeriods: periods.length, customBreaks: {} })}
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                title="Експорт в Excel"
               >
-                <FileText size={16} /> Класове (PDF)
-              </button>
-              <button
-                onClick={() => exportService.exportTeachersPDF(schedule, classes, teachers, rooms, subjects, { startTime: '08:00', lessonDuration: 40, breakDuration: 10, longBreakDuration: 20, longBreakAfterPeriod: 3, totalPeriods: periods.length, customBreaks: {} })}
-                className="flex flex-col items-center justify-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 p-2 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition"
-                title="Експорт на всички учители в PDF"
-              >
-                <FileText size={16} /> Учители (PDF)
+                <FileSpreadsheet size={16} />
+                <span className="hidden sm:inline">Excel</span>
               </button>
             </div>
-            <button
-              onClick={() => exportService.exportWholeSchoolPDF(schedule, classes, teachers, rooms, subjects, { startTime: '08:00', lessonDuration: 40, breakDuration: 10, longBreakDuration: 20, longBreakAfterPeriod: 3, totalPeriods: periods.length, customBreaks: {} })}
-              className="w-full flex items-center justify-center gap-1 bg-purple-50 text-purple-700 border border-purple-200 p-2 rounded-lg text-xs font-semibold hover:bg-purple-100 transition"
-            >
-              <FileText size={16} /> Пълна Програма (PDF)
-            </button>
-            <button
-              onClick={() => exportService.exportWholeSchoolExcel(schedule, classes, teachers, rooms, subjects, { startTime: '08:00', lessonDuration: 40, breakDuration: 10, longBreakDuration: 20, longBreakAfterPeriod: 3, totalPeriods: periods.length, customBreaks: {} })}
-              className="w-full flex items-center justify-center gap-1 bg-green-50 text-green-700 border border-green-200 p-2 rounded-lg text-xs font-semibold hover:bg-green-100 transition"
-            >
-              <Sheet size={16} /> Пълен Експорт (Excel)
-            </button>
           </div>
         </div>
       </div>

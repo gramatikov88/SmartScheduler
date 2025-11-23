@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Teacher, Room, ClassGroup, ScheduleItem, SchoolConfig } from '../types';
+import { Teacher, Room, ClassGroup, ScheduleItem, SchoolConfig, Subject, SubjectCategory } from '../types';
 import { storageService } from '../services/storageService';
-import { DEFAULT_SCHOOL_CONFIG } from '../constants';
+import { DEFAULT_SCHOOL_CONFIG, MOCK_SUBJECTS, DEFAULT_SUBJECT_CATEGORIES } from '../constants';
 
 interface SchoolContextType {
     teachers: Teacher[];
@@ -9,11 +9,15 @@ interface SchoolContextType {
     classes: ClassGroup[];
     schedule: ScheduleItem[];
     config: SchoolConfig;
+    subjects: Subject[];
+    subjectCategories: SubjectCategory[];
     setTeachers: (teachers: Teacher[] | ((prev: Teacher[]) => Teacher[])) => void;
     setRooms: (rooms: Room[] | ((prev: Room[]) => Room[])) => void;
     setClasses: (classes: ClassGroup[] | ((prev: ClassGroup[]) => ClassGroup[])) => void;
     setSchedule: (schedule: ScheduleItem[] | ((prev: ScheduleItem[]) => ScheduleItem[])) => void;
     setConfig: (config: SchoolConfig | ((prev: SchoolConfig) => SchoolConfig)) => void;
+    setSubjects: (subjects: Subject[] | ((prev: Subject[]) => Subject[])) => void;
+    setSubjectCategories: (categories: SubjectCategory[] | ((prev: SubjectCategory[]) => SubjectCategory[])) => void;
     loading: boolean;
 }
 
@@ -25,17 +29,29 @@ export const SchoolContextProvider: React.FC<{ children: React.ReactNode }> = ({
     const [classes, setClassesState] = useState<ClassGroup[]>([]);
     const [schedule, setScheduleState] = useState<ScheduleItem[]>([]);
     const [config, setConfigState] = useState<SchoolConfig>(DEFAULT_SCHOOL_CONFIG);
+    const [subjects, setSubjectsState] = useState<Subject[]>([]);
+    const [subjectCategories, setSubjectCategoriesState] = useState<SubjectCategory[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [loadedTeachers, loadedRooms, loadedClasses, loadedSchedule, loadedConfig] = await Promise.all([
+                const [
+                    loadedTeachers,
+                    loadedRooms,
+                    loadedClasses,
+                    loadedSchedule,
+                    loadedConfig,
+                    loadedSubjects,
+                    loadedCategories
+                ] = await Promise.all([
                     storageService.loadTeachers(),
                     storageService.loadRooms(),
                     storageService.loadClasses(),
                     storageService.loadSchedule(),
-                    storageService.loadConfig()
+                    storageService.loadConfig(),
+                    storageService.loadSubjects(),
+                    storageService.loadSubjectCategories()
                 ]);
 
                 setTeachersState(loadedTeachers);
@@ -43,6 +59,8 @@ export const SchoolContextProvider: React.FC<{ children: React.ReactNode }> = ({
                 setClassesState(loadedClasses);
                 setScheduleState(loadedSchedule);
                 setConfigState(loadedConfig);
+                setSubjectsState(loadedSubjects);
+                setSubjectCategoriesState(loadedCategories);
             } catch (error) {
                 console.error("Failed to load data", error);
             } finally {
@@ -93,10 +111,26 @@ export const SchoolContextProvider: React.FC<{ children: React.ReactNode }> = ({
         });
     };
 
+    const setSubjects = (newSubjects: Subject[] | ((prev: Subject[]) => Subject[])) => {
+        setSubjectsState(prev => {
+            const resolved = typeof newSubjects === 'function' ? (newSubjects as any)(prev) : newSubjects;
+            storageService.saveSubjects(resolved);
+            return resolved;
+        });
+    };
+
+    const setSubjectCategories = (newCategories: SubjectCategory[] | ((prev: SubjectCategory[]) => SubjectCategory[])) => {
+        setSubjectCategoriesState(prev => {
+            const resolved = typeof newCategories === 'function' ? (newCategories as any)(prev) : newCategories;
+            storageService.saveSubjectCategories(resolved);
+            return resolved;
+        });
+    };
+
     return (
         <SchoolContext.Provider value={{
-            teachers, rooms, classes, schedule, config,
-            setTeachers, setRooms, setClasses, setSchedule, setConfig,
+            teachers, rooms, classes, schedule, config, subjects, subjectCategories,
+            setTeachers, setRooms, setClasses, setSchedule, setConfig, setSubjects, setSubjectCategories,
             loading
         }}>
             {children}

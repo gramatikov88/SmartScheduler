@@ -19,13 +19,7 @@ export enum RoomType {
   LAB_SCIENCE = 'Science Lab'
 }
 
-export enum SubjectType {
-  HUMANITIES = 'humanities',
-  STEM = 'stem',
-  ARTS = 'arts',
-  SPORTS = 'sports',
-  IT = 'it'
-}
+
 
 export interface SchoolConfig {
   startTime: string; // "08:00"
@@ -105,4 +99,13 @@ export interface DragItem {
   duration: number;
   origin?: GridSlot; // If moved from grid
   scheduleId?: string; // If existing
+}
+
+declare global {
+  interface Window {
+    electronAPI: {
+      readFile: (filename: string) => Promise<any>;
+      writeFile: (filename: string, data: any) => Promise<boolean>;
+    };
+  }
 }
