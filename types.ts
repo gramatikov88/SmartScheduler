@@ -19,6 +19,14 @@ export enum RoomType {
   LAB_SCIENCE = 'Science Lab'
 }
 
+export enum SubjectType {
+  HUMANITIES = 'humanities',
+  STEM = 'stem',
+  ARTS = 'arts',
+  SPORTS = 'sports',
+  IT = 'it'
+}
+
 export interface SchoolConfig {
   startTime: string; // "08:00"
   lessonDuration: number; // minutes
