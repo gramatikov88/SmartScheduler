@@ -21,6 +21,8 @@ const Scheduler: React.FC<SchedulerProps> = ({
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [conflictSlots, setConflictSlots] = useState<Record<string, string>>({});
+  const [hoveredSlot, setHoveredSlot] = useState<{d: number, p: number} | null>(null);
+  
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -58,6 +60,10 @@ const Scheduler: React.FC<SchedulerProps> = ({
         if (teacher.constraints?.cannotTeachLast && period === periods.length - 1) {
             return "Ограничение (без последен час)";
         }
+        // Specific Blackouts
+        if (teacher.constraints?.specificBlackouts?.some(b => b.day === day && b.period === period)) {
+            return "Личен ангажимент на учителя";
+        }
     }
 
     // 2. Teacher is busy elsewhere
@@ -93,6 +99,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
      const conflicts: Record<string, string> = {};
      const subject = subjects.find(s => s.id === subjectId);
      const requiredRoomType = subject?.requiresRoomType || RoomType.CLASSROOM;
+     const currentClass = classes.find(c => c.id === currentClassId);
 
      for(let d=0; d<DAYS.length; d++) {
        for(let p=0; p<periods.length; p++) {
@@ -105,8 +112,13 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
           // 2. Room Availability Check
           // Find if there is AT LEAST ONE room of the required type available at this time
+          // AND it has enough capacity
           const hasFreeRoom = rooms.some(r => {
              if (r.type !== requiredRoomType) return false;
+             
+             // Capacity check
+             if (currentClass && r.capacity < currentClass.studentsCount) return false;
+
              // Check if this specific room is occupied
              const isRoomBusy = schedule.some(s => 
                s.roomId === r.id && 
@@ -118,7 +130,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
           });
 
           if (!hasFreeRoom) {
-             conflicts[`${d}-${p}`] = `Няма свободен кабинет (${requiredRoomType})`;
+             conflicts[`${d}-${p}`] = `Няма свободен/подходящ кабинет (${requiredRoomType})`;
           }
        }
      }
@@ -137,14 +149,20 @@ const Scheduler: React.FC<SchedulerProps> = ({
   const handleDragEnd = () => {
     setDraggedItem(null);
     setConflictSlots({});
+    setHoveredSlot(null);
   };
 
-  const handleDragOver = (e: React.DragEvent, isConflict: boolean) => {
+  const handleDragOver = (e: React.DragEvent, isConflict: boolean, d: number, p: number) => {
     e.preventDefault(); 
     if (isConflict) {
        e.dataTransfer.dropEffect = 'none';
     } else {
        e.dataTransfer.dropEffect = 'move';
+    }
+    
+    // Update hovered slot state for tooltip display
+    if (hoveredSlot?.d !== d || hoveredSlot?.p !== p) {
+        setHoveredSlot({d, p});
     }
   };
 
@@ -160,24 +178,39 @@ const Scheduler: React.FC<SchedulerProps> = ({
       return;
     }
     
-    // Find a room (Simplistic allocation: First available room of required type)
+    // Find a room
     const subject = subjects.find(s => s.id === draggedItem.subjectId);
     const requiredRoomType = subject?.requiresRoomType || RoomType.CLASSROOM;
     
-    // Find room not occupied at this time
-    const availableRoom = rooms.find(r => {
-      if (r.type !== requiredRoomType) return false;
+    // Filter rooms by type first
+    const roomsOfType = rooms.filter(r => r.type === requiredRoomType);
+    if (roomsOfType.length === 0) {
+      alert(`Грешка: Няма дефинирани кабинети от тип "${requiredRoomType}" в системата!`);
+      return;
+    }
+
+    // Find valid available room
+    const availableRoom = roomsOfType.find(r => {
+      // Check occupancy
       const isRoomBusy = schedule.some(s => 
         s.id !== draggedItem.scheduleId &&
         s.dayIndex === dayIndex &&
         s.periodIndex === periodIndex &&
         s.roomId === r.id
       );
+      // Check capacity
       return !isRoomBusy && r.capacity >= selectedClass.studentsCount;
     });
 
     if (!availableRoom) {
-      alert(`Няма свободен кабинет тип "${requiredRoomType}" за този час!`);
+      // Determine specific error for better UX
+      const hasCapacity = roomsOfType.some(r => r.capacity >= selectedClass.studentsCount);
+      
+      if (!hasCapacity) {
+         alert(`Няма кабинет от тип "${requiredRoomType}" с достатъчен капацитет за този клас (${selectedClass.studentsCount} ученици)! Моля увеличете местата в кабинета или разделете класа.`);
+      } else {
+         alert(`Всички подходящи кабинети ("${requiredRoomType}") са заети в този час!`);
+      }
       return;
     }
 
@@ -232,9 +265,24 @@ const Scheduler: React.FC<SchedulerProps> = ({
   };
 
   const handleAutoGenerate = async () => {
+    let currentScheduleToKeep: ScheduleItem[] = [];
+
     if (schedule.length > 0) {
-      if (!window.confirm("Това ще изтрие текущото разписание и ще генерира ново. Сигурни ли сте?")) {
-        return;
+      // Ask user if they want to complete or restart
+      const shouldComplete = window.confirm(
+        "Разписанието вече съдържа часове.\n\n" +
+        "Натиснете OK, за да ДОВЪРШИТЕ текущото разписание (запазвайки въведеното).\n" +
+        "Натиснете Cancel, ако искате да изтриете всичко и да генерирате наново (или да се откажете)."
+      );
+
+      if (shouldComplete) {
+        currentScheduleToKeep = schedule;
+      } else {
+        // Double check before deleting
+        if (!window.confirm("Сигурни ли сте, че искате да ИЗТРИЕТЕ цялото разписание и да генерирате ново от нулата?")) {
+          return; // Abort
+        }
+        currentScheduleToKeep = [];
       }
     }
     
@@ -250,11 +298,25 @@ const Scheduler: React.FC<SchedulerProps> = ({
         customBreaks: {}
       };
 
-      const newSchedule = await generateScheduleWithGemini(teachers, classes, rooms, subjects, config);
-      setSchedule(newSchedule);
-      alert(`Успешно генерирани ${newSchedule.length} часа!`);
-    } catch (error) {
-      alert("Грешка при генерирането. Моля опитайте отново.");
+      const newItems = await generateScheduleWithGemini(
+        teachers, 
+        classes, 
+        rooms, 
+        subjects, 
+        config, 
+        currentScheduleToKeep // Pass existing schedule context
+      );
+
+      if (newItems.length === 0) {
+        alert("Всички часове от учебния план вече са разпределени! Няма какво да се генерира.");
+      } else {
+        // Merge existing with new
+        setSchedule([...currentScheduleToKeep, ...newItems]);
+        alert(`Успешно добавени ${newItems.length} нови часа!`);
+      }
+    } catch (error: any) {
+      console.error(error);
+      alert(`Грешка при генерирането: ${error.message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -399,7 +461,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
                     
                     if (isDragActive) {
                         if (isConflictSlot) {
-                            cellClasses += "bg-red-50 ";
+                            cellClasses += "bg-red-50/60 "; // Saturated background for all conflicts
                         } else if (!cellItem) {
                             // Valid drop target (empty slot)
                             cellClasses += "bg-emerald-50 ring-2 ring-inset ring-emerald-300 ring-dashed ";
@@ -411,16 +473,16 @@ const Scheduler: React.FC<SchedulerProps> = ({
                     return (
                       <div 
                         key={`${dIndex}-${pIndex}`}
-                        onDragOver={(e) => handleDragOver(e, isConflictSlot)}
+                        onDragOver={(e) => handleDragOver(e, isConflictSlot, dIndex, pIndex)}
                         onDrop={(e) => handleDrop(e, dIndex, pIndex)}
                         className={cellClasses}
-                        title={conflictReason || ''} // Fallback tooltip
+                        title={conflictReason || ''} // Fallback native tooltip
                       >
-                         {/* Conflict Overlay with Reason */}
-                         {isDragActive && isConflictSlot && (
-                             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/70 backdrop-blur-[1px] p-2 text-center animate-in fade-in">
-                                <Ban className="text-red-500 mb-1" size={24} strokeWidth={2} />
-                                <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm leading-tight border border-red-200">
+                         {/* Detailed Conflict Tooltip - ONLY Show on Hover of specific cell */}
+                         {isDragActive && isConflictSlot && hoveredSlot?.d === dIndex && hoveredSlot?.p === pIndex && (
+                             <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-red-50 p-1 text-center animate-in zoom-in-95 border-2 border-red-200 shadow-lg rounded-lg">
+                                <Ban className="text-red-500 mb-1" size={20} />
+                                <span className="text-[10px] font-bold text-red-700 leading-tight select-none">
                                    {conflictReason}
                                 </span>
                              </div>

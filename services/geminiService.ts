@@ -46,14 +46,15 @@ export const analyzeScheduleWithGemini = async (
       1. Психохигиена на ученика: Трудни предмети (Difficulty > 7) трябва да са в началото на деня (периоди 0-3).
       2. Комфорт на учителя: Избягване на "прозорци" (свободни часове между заети) и спазване на желани почивни дни.
       3. Равномерност: Учениците да нямат твърде натоварени и твърде леки дни.
+      4. Логистика: Избягване на твърде много поредни часове (над 5).
 
       Данни:
       ${JSON.stringify(dataSummary, null, 2)}
 
       Върни отговора в кратък, структуриран формат на Български език:
-      - Обща оценка (0-10)
-      - Открити проблеми (Bullet points)
-      - Препоръки за оптимизация (Bullet points)
+      - Обща оценка (0-100)
+      - ⚠️ Критични проблеми (ако има)
+      - 💡 Предложения за оптимизация (конкретни смени)
     `;
 
     const response = await ai.models.generateContent({
@@ -62,9 +63,9 @@ export const analyzeScheduleWithGemini = async (
     });
 
     return response.text || "Няма генериран отговор.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Error:", error);
-    return "Възникна грешка при комуникацията с AI асистента.";
+    return `Възникна грешка при комуникацията с AI асистента: ${error.message}`;
   }
 };
 
@@ -73,22 +74,41 @@ export const generateScheduleWithGemini = async (
   classes: ClassGroup[],
   rooms: Room[],
   subjects: Subject[],
-  config: SchoolConfig
+  config: SchoolConfig,
+  currentSchedule: ScheduleItem[] = []
 ): Promise<ScheduleItem[]> => {
   try {
     const ai = getClient();
 
-    // 1. Prepare simplified data structures to minimize token usage
-    const simplifiedClasses = classes.map(c => ({
-      id: c.id,
-      name: c.name,
-      curriculum: c.curriculum.map(curr => ({
-        subjectId: curr.subjectId,
-        teacherId: curr.teacherId,
-        hours: curr.hoursPerWeek,
-        roomType: subjects.find(s => s.id === curr.subjectId)?.requiresRoomType || 'Classroom'
-      }))
-    }));
+    // 1. Calculate Remaining Curriculum based on currentSchedule
+    // We only want to ask the AI to schedule what is missing.
+    const simplifiedClasses = classes.map(c => {
+      // Filter the curriculum items
+      const remainingCurriculum = c.curriculum.map(curr => {
+        const alreadyScheduledCount = currentSchedule.filter(s => 
+          s.classGroupId === c.id && s.subjectId === curr.subjectId
+        ).length;
+
+        const remainingHours = Math.max(0, curr.hoursPerWeek - alreadyScheduledCount);
+        
+        return {
+          subjectId: curr.subjectId,
+          teacherId: curr.teacherId,
+          hours: remainingHours,
+          roomType: subjects.find(s => s.id === curr.subjectId)?.requiresRoomType || 'Classroom'
+        };
+      }).filter(item => item.hours > 0); // Remove satisfied subjects
+
+      return {
+        id: c.id,
+        name: c.name,
+        curriculum: remainingCurriculum
+      };
+    }).filter(c => c.curriculum.length > 0); // Remove fully scheduled classes
+
+    if (simplifiedClasses.length === 0) {
+      return []; // Nothing to schedule
+    }
 
     const simplifiedRooms = rooms.map(r => ({
       id: r.id,
@@ -99,33 +119,41 @@ export const generateScheduleWithGemini = async (
     const simplifiedTeachers = teachers.map(t => ({
       id: t.id,
       maxHours: t.maxHoursPerDay,
-      unwantedDays: t.unwantedDays, // 0=Mon, 4=Fri
-      travels: t.constraints?.travels, // Cannot have 1st period
-      cannotTeachLast: t.constraints?.cannotTeachLast // Cannot have last period
+      unwantedDays: t.unwantedDays,
+      travels: t.constraints?.travels,
+      cannotTeachLast: t.constraints?.cannotTeachLast
+    }));
+
+    // Identify occupied slots to pass as constraints
+    const occupiedSlots = currentSchedule.map(s => ({
+       d: s.dayIndex,
+       p: s.periodIndex,
+       c: s.classGroupId, // Class is busy
+       t: s.teacherId,    // Teacher is busy
+       r: s.roomId        // Room is busy
     }));
 
     // 2. Construct the prompt
     const prompt = `
-      Ти си алгоритъм за планиране на училищна програма. Твоята задача е да генерираш JSON масив от часове.
+      Ти си алгоритъм за планиране на училищна програма.
+      
+      Задача: Генерирай JSON масив от НОВИ часове, за да ДОВЪРШИШ разписанието.
       
       Входни данни:
-      - Конфигурация: 5 дни (индекси 0-4), ${config.totalPeriods} учебни часа на ден (индекси 0-${config.totalPeriods - 1}).
-      - Класове и учебен план: ${JSON.stringify(simplifiedClasses)}
+      - Конфигурация: 5 дни (индекси 0-4), ${config.totalPeriods} учебни часа на ден.
+      - ЗАЕТИ СЛОТОВЕ (Existing Schedule): ${JSON.stringify(occupiedSlots)}
+      - ОСТАВАЩ УЧЕБЕН ПЛАН (Tasks): ${JSON.stringify(simplifiedClasses)}
       - Кабинети: ${JSON.stringify(simplifiedRooms)}
       - Учители: ${JSON.stringify(simplifiedTeachers)}
 
       Правила (Hard Constraints):
-      1. Един клас може да има само един час в даден период.
-      2. Един учител може да преподава само на едно място в даден период.
-      3. Един кабинет може да се ползва само от един клас в даден период.
-      4. Типът на кабинета трябва да отговаря на изискването на предмета (roomType).
-      5. Учителят не трябва да има час в дните от "unwantedDays".
-      6. Ако учителят има "travels: true", той НЕ МОЖЕ да има час в период 0 (1-ви час).
-      7. Ако учителят има "cannotTeachLast: true", той НЕ МОЖЕ да има час в период ${config.totalPeriods - 1} (последен час).
+      1. НЕ слагай час, ако Учителят (t), Класът (c) или Кабинетът (r) вече присъстват в "ЗАЕТИ СЛОТОВЕ" за същия ден (d) и период (p).
+      2. Един клас/учител/кабинет може да бъде зает само веднъж в един период.
+      3. Спазвай капацитета на стаите и типа (roomType).
+      4. Учител с "travels: true" -> забрана за период 0.
+      5. Учител с "cannotTeachLast: true" -> забрана за период ${config.totalPeriods - 1}.
       
-      Задача:
-      Генерирай възможно най-пълното разписание, спазвайки горните правила.
-      Опитай се да разпределиш всички часове от учебния план (curriculum).
+      Генерирай само липсващите часове от "ОСТАВАЩ УЧЕБЕН ПЛАН".
       
       Формат на отговора (JSON Array):
       [
@@ -138,25 +166,37 @@ export const generateScheduleWithGemini = async (
           "periodIndex": number
         }
       ]
-      Върни САМО JSON масива, без допълнителен текст.
+      Върни САМО JSON масива.
     `;
 
     // 3. Call Gemini
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Using flash for speed/cost effectiveness on large JSON generation
+      model: 'gemini-2.5-flash', 
       contents: prompt,
       config: {
         responseMimeType: "application/json"
       }
     });
 
-    const jsonText = response.text;
-    if (!jsonText) throw new Error("Empty response from AI");
+    let jsonText = response.text;
+    if (!jsonText) throw new Error("Получен е празен отговор от AI модела.");
 
-    const rawSchedule = JSON.parse(jsonText);
+    // Sanitization
+    jsonText = jsonText.replace(/```json\n?|\n?```/g, "").trim();
 
-    // 4. Validate and map to internal types
-    // Add unique IDs and locked status
+    let rawSchedule;
+    try {
+        rawSchedule = JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Failed to parse JSON:", jsonText);
+        throw new Error("AI генерира невалиден JSON формат.");
+    }
+
+    if (!Array.isArray(rawSchedule)) {
+         throw new Error("AI върна некоректна структура (не е масив).");
+    }
+
+    // 4. Validate
     const validatedSchedule: ScheduleItem[] = rawSchedule.map((item: any) => ({
       id: `ai_gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       classGroupId: item.classGroupId,
@@ -170,8 +210,8 @@ export const generateScheduleWithGemini = async (
 
     return validatedSchedule;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Generative Schedule Error:", error);
-    throw error;
+    throw new Error(error.message || "Неизвестна грешка при генериране.");
   }
 };

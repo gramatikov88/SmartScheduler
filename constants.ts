@@ -112,7 +112,7 @@ export const MOCK_TEACHERS: Teacher[] = [
 export const MOCK_ROOMS: Room[] = [
   { id: 'r_101', name: '101 (Класна стая)', type: RoomType.CLASSROOM, capacity: 30 },
   { id: 'r_102', name: '102 (Класна стая)', type: RoomType.CLASSROOM, capacity: 30 },
-  { id: 'r_201', name: '201 (Компютърен)', type: RoomType.LAB_IT, capacity: 15 },
+  { id: 'r_201', name: '201 (Компютърен)', type: RoomType.LAB_IT, capacity: 30 },
   { id: 'r_gym', name: 'Физкултурен салон', type: RoomType.GYM, capacity: 60 },
   { id: 'r_lab', name: 'Лаборатория', type: RoomType.LAB_SCIENCE, capacity: 20 },
 ];

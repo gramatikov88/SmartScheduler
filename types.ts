@@ -33,6 +33,7 @@ export interface TeacherConstraints {
   travels: boolean; // Cannot have 1st period
   cannotTeachLast: boolean; // Cannot have last period
   maxGaps: number; // Max empty slots between lessons
+  specificBlackouts?: { day: number; period: number }[];
 }
 
 export interface Teacher {
