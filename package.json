@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.0.0",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+  "main": "electron/main.cjs",
+>>>>>>> Stashed changes
 =======
   "main": "electron/main.cjs",
 >>>>>>> Stashed changes
@@ -31,6 +35,9 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "xlsx": "^0.18.5"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   },
   "devDependencies": {
@@ -38,13 +45,19 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     "autoprefixer": "^10.4.22",
     "concurrently": "^9.2.1",
     "electron": "^39.2.3",
     "electron-builder": "^26.0.12",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.17",
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
