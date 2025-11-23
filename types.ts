@@ -1,17 +1,4 @@
 
-export enum SubjectType {
-  HUMANITIES = 'Humanities',
-  STEM = 'STEM',
-  ARTS = 'Arts',
-  SPORTS = 'Sports',
-  IT = 'IT'
-}
-
-export interface SubjectCategory {
-  id: string;
-  name: string;
-}
-
 export enum RoomType {
   CLASSROOM = 'Classroom',
   LAB_IT = 'IT Lab',
@@ -97,4 +84,21 @@ export interface DragItem {
   duration: number;
   origin?: GridSlot; // If moved from grid
   scheduleId?: string; // If existing
+}
+
+export enum SubjectCategory {
+  HUMANITIES = 'humanities',
+  STEM = 'stem',
+  ARTS = 'arts',
+  SPORTS = 'sports',
+  IT = 'it'
+}
+
+declare global {
+  interface Window {
+    electronAPI: {
+      readFile: (filename: string) => Promise<any>;
+      writeFile: (filename: string, data: any) => Promise<boolean>;
+    };
+  }
 }
