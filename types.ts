@@ -29,12 +29,19 @@ export interface SchoolConfig {
   customBreaks: Record<number, number>; // Key: Period index (after which break occurs), Value: minutes
 }
 
+export interface TeacherConstraints {
+  travels: boolean; // Cannot have 1st period
+  cannotTeachLast: boolean; // Cannot have last period
+  maxGaps: number; // Max empty slots between lessons
+}
+
 export interface Teacher {
   id: string;
   name: string;
   subjects: string[]; // Subject IDs
   maxHoursPerDay: number;
   unwantedDays: number[]; // 0=Mon, 4=Fri
+  constraints: TeacherConstraints;
 }
 
 export interface Room {

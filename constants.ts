@@ -67,11 +67,46 @@ export const MOCK_SUBJECTS: Subject[] = [
 ];
 
 export const MOCK_TEACHERS: Teacher[] = [
-  { id: 't_ivanov', name: 'Иван Иванов', subjects: ['sub_math', 'sub_phys'], maxHoursPerDay: 6, unwantedDays: [] },
-  { id: 't_petrova', name: 'Мария Петрова', subjects: ['sub_bg', 'sub_hist'], maxHoursPerDay: 5, unwantedDays: [4] }, // No Fridays
-  { id: 't_georgiev', name: 'Георги Георгиев', subjects: ['sub_sport'], maxHoursPerDay: 7, unwantedDays: [] },
-  { id: 't_dimitrova', name: 'Елена Димитрова', subjects: ['sub_eng'], maxHoursPerDay: 6, unwantedDays: [] },
-  { id: 't_kolev', name: 'Николай Колев', subjects: ['sub_it'], maxHoursPerDay: 6, unwantedDays: [] },
+  { 
+    id: 't_ivanov', 
+    name: 'Иван Иванов', 
+    subjects: ['sub_math', 'sub_phys'], 
+    maxHoursPerDay: 6, 
+    unwantedDays: [],
+    constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
+  },
+  { 
+    id: 't_petrova', 
+    name: 'Мария Петрова', 
+    subjects: ['sub_bg', 'sub_hist'], 
+    maxHoursPerDay: 5, 
+    unwantedDays: [4], // No Fridays
+    constraints: { travels: true, cannotTeachLast: true, maxGaps: 1 }
+  },
+  { 
+    id: 't_georgiev', 
+    name: 'Георги Георгиев', 
+    subjects: ['sub_sport'], 
+    maxHoursPerDay: 7, 
+    unwantedDays: [],
+    constraints: { travels: false, cannotTeachLast: false, maxGaps: 3 }
+  },
+  { 
+    id: 't_dimitrova', 
+    name: 'Елена Димитрова', 
+    subjects: ['sub_eng'], 
+    maxHoursPerDay: 6, 
+    unwantedDays: [],
+    constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
+  },
+  { 
+    id: 't_kolev', 
+    name: 'Николай Колев', 
+    subjects: ['sub_it'], 
+    maxHoursPerDay: 6, 
+    unwantedDays: [],
+    constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
+  },
 ];
 
 export const MOCK_ROOMS: Room[] = [

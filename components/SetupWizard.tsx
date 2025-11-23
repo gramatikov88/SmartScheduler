@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Teacher, Room, ClassGroup, Subject, RoomType, SubjectType, SchoolConfig, SubjectCategory } from '../types';
-import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle } from 'lucide-react';
+import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle, Briefcase } from 'lucide-react';
 import { generatePeriods } from '../constants';
 
 interface SetupWizardProps {
@@ -18,6 +18,13 @@ interface SetupWizardProps {
   setSubjectCategories: React.Dispatch<React.SetStateAction<SubjectCategory[]>>;
   setSchoolConfig: React.Dispatch<React.SetStateAction<SchoolConfig>>;
 }
+
+const ROOM_TYPE_LABELS: Record<RoomType, string> = {
+  [RoomType.CLASSROOM]: 'Класна стая',
+  [RoomType.LAB_IT]: 'Компютърен кабинет',
+  [RoomType.LAB_SCIENCE]: 'Лаборатория',
+  [RoomType.GYM]: 'Физкултурен салон'
+};
 
 const SetupWizard: React.FC<SetupWizardProps> = ({
   teachers, rooms, classes, subjects, subjectCategories, schoolConfig, 
@@ -36,12 +43,25 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
 
+  // New Room State
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomType, setNewRoomType] = useState<RoomType>(RoomType.CLASSROOM);
+  const [newRoomCapacity, setNewRoomCapacity] = useState(26);
+
   // Curriculum Editing State
   const [addingCurriculumToClass, setAddingCurriculumToClass] = useState<string | null>(null);
   const [newCurriculumState, setNewCurriculumState] = useState<{subjectId: string, hours: number, teacherId: string}>({
       subjectId: '',
       hours: 2,
       teacherId: ''
+  });
+
+  // New Class Form State
+  const [isAddingClass, setIsAddingClass] = useState(false);
+  const [newClassData, setNewClassData] = useState({
+      name: '',
+      studentsCount: 26,
+      shift: 1
   });
 
   const getCategoryName = (id: string) => {
@@ -54,7 +74,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
       name: 'Нов Учител',
       subjects: [],
       maxHoursPerDay: 6,
-      unwantedDays: []
+      unwantedDays: [],
+      constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
     };
     setTeachers([newTeacher, ...teachers]);
   };
@@ -125,16 +146,56 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
       setSubjectCategories(subjectCategories.filter(c => c.id !== id));
   };
 
+  // --- Room Actions ---
+  const addRoom = () => {
+    if (!newRoomName.trim()) return;
+    const newRoom: Room = {
+      id: `r_${Date.now()}`,
+      name: newRoomName,
+      type: newRoomType,
+      capacity: newRoomCapacity
+    };
+    setRooms([newRoom, ...rooms]);
+    setNewRoomName('');
+    setNewRoomCapacity(26);
+  };
+
+  const updateRoom = (id: string, field: keyof Room, value: any) => {
+    setRooms(rooms.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
+
+  const deleteRoom = (id: string) => {
+    if (window.confirm("Сигурни ли сте?")) {
+      setRooms(rooms.filter(r => r.id !== id));
+    }
+  };
+
   // --- Curriculum Actions ---
-  const addClass = () => {
+  const saveNewClass = () => {
+      const className = newClassData.name.trim();
+      
+      if (!className) {
+          alert("Моля въведете име на класа.");
+          return;
+      }
+
+      if (classes.some(c => c.name.toLowerCase() === className.toLowerCase())) {
+          alert("Вече съществува клас с това име!");
+          return;
+      }
+
       const newClass: ClassGroup = {
           id: `c_${Date.now()}`,
-          name: 'Нов Клас',
-          studentsCount: 26,
-          shift: 1,
+          name: className,
+          studentsCount: newClassData.studentsCount,
+          shift: newClassData.shift as 1 | 2,
           curriculum: []
       };
-      setClasses([...classes, newClass]);
+      setClasses([newClass, ...classes]);
+      
+      // Reset form
+      setIsAddingClass(false);
+      setNewClassData({ name: '', studentsCount: 26, shift: 1 });
   };
 
   const deleteClass = (id: string) => {
@@ -280,101 +341,137 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
             </div>
 
             {teachers.map(teacher => (
-              <div key={teacher.id} className="p-4 border rounded-lg bg-gray-50 flex flex-col md:flex-row gap-4 items-start md:items-center relative">
-                <div className="flex-1">
-                  <label className="text-xs text-gray-500 font-semibold uppercase">Име</label>
-                  <input
-                    type="text"
-                    value={teacher.name}
-                    onChange={(e) => updateTeacher(teacher.id, 'name', e.target.value)}
-                    className="w-full mt-1 px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div className="w-32">
-                  <label className="text-xs text-gray-500 font-semibold uppercase">Макс. часове</label>
-                  <input
-                    type="number"
-                    value={teacher.maxHoursPerDay}
-                    onChange={(e) => updateTeacher(teacher.id, 'maxHoursPerDay', parseInt(e.target.value))}
-                    className="w-full mt-1 px-3 py-2 border rounded-md"
-                  />
-                </div>
-                <div className="flex-1 min-w-[300px] relative">
-                   <label className="text-xs text-gray-500 font-semibold uppercase">
-                     Квалификация {subjectFilter !== 'ALL' && `(${getCategoryName(subjectFilter)})`}
-                   </label>
-                   <div className="flex flex-wrap gap-1 mt-1">
-                      {subjects
-                        .filter(sub => teacher.subjects.includes(sub.id))
-                        .filter(sub => subjectFilter === 'ALL' || sub.type === subjectFilter)
-                        .map(sub => (
+              <div key={teacher.id} className="p-4 border rounded-lg bg-gray-50 flex flex-col gap-4 relative">
+                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center w-full">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 font-semibold uppercase">Име</label>
+                    <input
+                      type="text"
+                      value={teacher.name}
+                      onChange={(e) => updateTeacher(teacher.id, 'name', e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="w-32">
+                    <label className="text-xs text-gray-500 font-semibold uppercase">Макс. часове</label>
+                    <input
+                      type="number"
+                      value={teacher.maxHoursPerDay}
+                      onChange={(e) => updateTeacher(teacher.id, 'maxHoursPerDay', parseInt(e.target.value))}
+                      className="w-full mt-1 px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[300px] relative">
+                    <label className="text-xs text-gray-500 font-semibold uppercase">
+                      Квалификация {subjectFilter !== 'ALL' && `(${getCategoryName(subjectFilter)})`}
+                    </label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                        {subjects
+                          .filter(sub => teacher.subjects.includes(sub.id))
+                          .filter(sub => subjectFilter === 'ALL' || sub.type === subjectFilter)
+                          .map(sub => (
+                          <button
+                            key={sub.id}
+                            onClick={() => {
+                              const newSubjects = teacher.subjects.filter(s => s !== sub.id);
+                              updateTeacher(teacher.id, 'subjects', newSubjects);
+                            }}
+                            className={`text-xs px-2 py-1 rounded-full border transition-colors bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-red-100 hover:text-red-700 hover:border-red-200`}
+                          >
+                            {sub.name}
+                          </button>
+                        ))}
+                        
+                        {/* Plus Button to Add New Qualification */}
                         <button
-                          key={sub.id}
-                          onClick={() => {
-                             const newSubjects = teacher.subjects.filter(s => s !== sub.id);
-                             updateTeacher(teacher.id, 'subjects', newSubjects);
-                          }}
-                          className={`text-xs px-2 py-1 rounded-full border transition-colors bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-red-100 hover:text-red-700 hover:border-red-200`}
+                          onClick={() => setAddingSubjectToTeacher(addingSubjectToTeacher === teacher.id ? null : teacher.id)}
+                          className="text-xs px-2 py-1 rounded-full border border-dashed border-gray-400 text-gray-600 hover:bg-white hover:border-indigo-500 hover:text-indigo-600 flex items-center gap-1 transition-all"
                         >
-                          {sub.name}
+                          <Plus size={12} />
                         </button>
-                      ))}
-                      
-                      {/* Plus Button to Add New Qualification */}
-                      <button
-                        onClick={() => setAddingSubjectToTeacher(addingSubjectToTeacher === teacher.id ? null : teacher.id)}
-                        className="text-xs px-2 py-1 rounded-full border border-dashed border-gray-400 text-gray-600 hover:bg-white hover:border-indigo-500 hover:text-indigo-600 flex items-center gap-1 transition-all"
-                      >
-                        <Plus size={12} />
-                      </button>
+                    </div>
 
-                      {subjects
-                        .filter(sub => teacher.subjects.includes(sub.id))
-                        .filter(sub => subjectFilter === 'ALL' || sub.type === subjectFilter).length === 0 && teacher.subjects.length > 0 && (
-                          <span className="text-xs text-gray-400 italic py-1">Няма квалификации по {getCategoryName(subjectFilter)}</span>
-                      )}
-                       {teacher.subjects.length === 0 && (
-                          <span className="text-xs text-gray-400 italic py-1">Няма добавени квалификации</span>
-                      )}
-                   </div>
-
-                   {/* Dropdown for adding subjects */}
-                   {addingSubjectToTeacher === teacher.id && (
-                     <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 max-h-64 overflow-y-auto">
-                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
-                           <span className="text-xs font-bold text-gray-700">Добави квалификация</span>
-                           <button onClick={() => setAddingSubjectToTeacher(null)} className="text-gray-400 hover:text-gray-700"><X size={14}/></button>
-                        </div>
-                        <div className="space-y-1">
-                           {subjects
-                             .filter(s => !teacher.subjects.includes(s.id))
-                             .map(sub => (
-                               <button
-                                 key={sub.id}
-                                 onClick={() => {
-                                   updateTeacher(teacher.id, 'subjects', [...teacher.subjects, sub.id]);
-                                   setAddingSubjectToTeacher(null);
-                                 }}
-                                 className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-indigo-50 text-gray-700 flex justify-between group"
-                               >
-                                 <span>{sub.name}</span>
-                                 <span className="text-gray-400 group-hover:text-indigo-400 text-[10px]">{getCategoryName(sub.type)}</span>
-                               </button>
-                             ))
-                           }
-                           {subjects.filter(s => !teacher.subjects.includes(s.id)).length === 0 && (
-                             <div className="text-center text-xs text-gray-400 py-2">Учителят има всички квалификации.</div>
-                           )}
-                        </div>
-                     </div>
-                   )}
+                    {/* Dropdown for adding subjects */}
+                    {addingSubjectToTeacher === teacher.id && (
+                      <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 max-h-64 overflow-y-auto">
+                          <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
+                            <span className="text-xs font-bold text-gray-700">Добави квалификация</span>
+                            <button onClick={() => setAddingSubjectToTeacher(null)} className="text-gray-400 hover:text-gray-700"><X size={14}/></button>
+                          </div>
+                          <div className="space-y-1">
+                            {subjects
+                              .filter(s => !teacher.subjects.includes(s.id))
+                              .map(sub => (
+                                <button
+                                  key={sub.id}
+                                  onClick={() => {
+                                    updateTeacher(teacher.id, 'subjects', [...teacher.subjects, sub.id]);
+                                    setAddingSubjectToTeacher(null);
+                                  }}
+                                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-indigo-50 text-gray-700 flex justify-between group"
+                                >
+                                  <span>{sub.name}</span>
+                                  <span className="text-gray-400 group-hover:text-indigo-400 text-[10px]">{getCategoryName(sub.type)}</span>
+                                </button>
+                              ))
+                            }
+                          </div>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setTeachers(teachers.filter(t => t.id !== teacher.id))}
+                    className="text-red-500 hover:text-red-700 p-2"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setTeachers(teachers.filter(t => t.id !== teacher.id))}
-                  className="text-red-500 hover:text-red-700 p-2"
-                >
-                  <Trash2 size={18} />
-                </button>
+                
+                {/* Working Conditions Footer */}
+                <div className="w-full pt-3 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-6">
+                   <div className="flex items-center gap-2 text-xs text-gray-600">
+                      <Briefcase size={14} className="text-indigo-400"/>
+                      <span className="font-semibold uppercase text-[10px] text-gray-400 tracking-wider">Условия на труд:</span>
+                   </div>
+                   
+                   <label className="flex items-center gap-2 cursor-pointer group" title="Забрана за 1-ви час">
+                      <div className="relative flex items-center">
+                         <input 
+                           type="checkbox" 
+                           className="peer sr-only"
+                           checked={teacher.constraints?.travels || false}
+                           onChange={(e) => updateTeacher(teacher.id, 'constraints', { ...teacher.constraints, travels: e.target.checked })}
+                         />
+                         <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </div>
+                      <span className="text-xs text-gray-600 group-hover:text-indigo-700 transition-colors">Пътуващ (Без 1-ви час)</span>
+                   </label>
+
+                   <label className="flex items-center gap-2 cursor-pointer group" title="Забрана за последен час">
+                      <div className="relative flex items-center">
+                         <input 
+                           type="checkbox" 
+                           className="peer sr-only"
+                           checked={teacher.constraints?.cannotTeachLast || false}
+                           onChange={(e) => updateTeacher(teacher.id, 'constraints', { ...teacher.constraints, cannotTeachLast: e.target.checked })}
+                         />
+                         <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                      </div>
+                      <span className="text-xs text-gray-600 group-hover:text-orange-700 transition-colors">Без последен час</span>
+                   </label>
+
+                   <div className="flex items-center gap-2 ml-auto">
+                      <label className="text-xs text-gray-600">Макс. прозорци:</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="5"
+                        className="w-12 border rounded px-1 py-0.5 text-xs text-center focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                        value={teacher.constraints?.maxGaps || 0}
+                        onChange={(e) => updateTeacher(teacher.id, 'constraints', { ...teacher.constraints, maxGaps: parseInt(e.target.value) })}
+                      />
+                   </div>
+                </div>
               </div>
             ))}
           </div>
@@ -503,23 +600,100 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
         )}
 
         {activeTab === 'rooms' && (
-           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Материална База</h2>
+           <div className="space-y-6">
+            <h2 className="text-lg font-semibold text-gray-800">Материална База</h2>
+            
+            {/* Add Room Form */}
+            <div className="p-5 bg-gray-50 border rounded-xl shadow-sm">
+                <h3 className="text-sm font-bold text-gray-700 uppercase mb-4">Добави нова стая/кабинет</h3>
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Име / Номер</label>
+                    <input
+                      type="text"
+                      placeholder="напр. 203"
+                      value={newRoomName}
+                      onChange={(e) => setNewRoomName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Тип</label>
+                    <select
+                      value={newRoomType}
+                      onChange={(e) => setNewRoomType(e.target.value as RoomType)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-indigo-500"
+                    >
+                      {Object.values(RoomType).map(type => (
+                        <option key={type} value={type}>{ROOM_TYPE_LABELS[type]}</option>
+                      ))}
+                    </select>
+                  </div>
+                   <div className="w-24">
+                    <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Места</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newRoomCapacity}
+                      onChange={(e) => setNewRoomCapacity(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500"
+                    />
+                  </div>
+                  <button 
+                    onClick={addRoom}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 flex items-center gap-2"
+                  >
+                    <Plus size={18} /> Добави
+                  </button>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {rooms.map(room => (
-                <div key={room.id} className="p-4 border rounded-lg bg-white shadow-sm">
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-gray-800">{room.name}</h3>
-                    <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">{room.type}</span>
+                <div key={room.id} className="p-4 border rounded-lg bg-white shadow-sm flex flex-col gap-3 group">
+                  <div className="flex justify-between items-center gap-2">
+                    <div className="flex-1">
+                       <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Име</label>
+                       <input
+                        type="text"
+                        value={room.name}
+                        onChange={(e) => updateRoom(room.id, 'name', e.target.value)}
+                        className="w-full px-2 py-1 text-sm font-bold text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => deleteRoom(room.id)}
+                      className="text-gray-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                       <Trash2 size={16}/>
+                    </button>
                   </div>
-                  <div className="mt-2 text-sm text-gray-600">
-                    Капацитет: <span className="font-medium text-gray-900">{room.capacity} места</span>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                     <div>
+                       <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Тип</label>
+                       <select
+                         value={room.type}
+                         onChange={(e) => updateRoom(room.id, 'type', e.target.value)}
+                         className="w-full text-xs px-2 py-1 border rounded bg-gray-50 text-gray-700"
+                       >
+                         {Object.values(RoomType).map(type => (
+                           <option key={type} value={type}>{ROOM_TYPE_LABELS[type]}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div>
+                       <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Капацитет</label>
+                       <input
+                         type="number"
+                         value={room.capacity}
+                         onChange={(e) => updateRoom(room.id, 'capacity', parseInt(e.target.value))}
+                         className="w-full text-xs px-2 py-1 border rounded bg-gray-50 text-gray-700"
+                       />
+                     </div>
                   </div>
                 </div>
               ))}
-            </div>
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800 text-sm">
-              * Редактирането на кабинети е ограничено в тази демо версия.
             </div>
            </div>
         )}
@@ -528,10 +702,65 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
           <div className="space-y-6 pb-20">
              <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-800">Учебен План по Класове</h2>
-                <button onClick={addClass} className="btn-primary bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700">
+                <button onClick={() => setIsAddingClass(true)} className="btn-primary bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700">
                    <Plus size={16}/> Добави Клас
                 </button>
              </div>
+             
+             {isAddingClass && (
+                 <div className="border rounded-xl overflow-hidden shadow-sm bg-indigo-50 border-indigo-200 animate-in fade-in slide-in-from-top-2">
+                    <div className="px-4 py-3 border-b border-indigo-200 flex flex-wrap gap-4 justify-between items-center">
+                        <div className="flex items-center gap-4 flex-1">
+                            <div className="flex flex-col">
+                               <label className="text-[10px] text-indigo-700 font-bold uppercase">Име на Клас</label>
+                               <input 
+                                 type="text" 
+                                 placeholder="напр. 8 А"
+                                 autoFocus
+                                 value={newClassData.name}
+                                 onChange={(e) => setNewClassData({...newClassData, name: e.target.value})}
+                                 className="bg-white border border-indigo-300 rounded px-2 py-1 text-sm font-bold w-32 focus:ring-indigo-500"
+                               />
+                            </div>
+                            <div className="flex flex-col">
+                               <label className="text-[10px] text-indigo-700 font-bold uppercase">Ученици</label>
+                               <input 
+                                 type="number" 
+                                 min="1"
+                                 value={newClassData.studentsCount}
+                                 onChange={(e) => setNewClassData({...newClassData, studentsCount: parseInt(e.target.value)})}
+                                 className="bg-white border border-indigo-300 rounded px-2 py-1 text-sm w-20 focus:ring-indigo-500"
+                               />
+                            </div>
+                             <div className="flex flex-col">
+                               <label className="text-[10px] text-indigo-700 font-bold uppercase">Смяна</label>
+                               <select
+                                 value={newClassData.shift}
+                                 onChange={(e) => setNewClassData({...newClassData, shift: parseInt(e.target.value)})}
+                                 className="bg-white border border-indigo-300 rounded px-2 py-1 text-sm w-24 focus:ring-indigo-500"
+                               >
+                                  <option value={1}>Първа</option>
+                                  <option value={2}>Втора</option>
+                               </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                           <button 
+                             onClick={saveNewClass}
+                             className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 rounded text-sm hover:bg-indigo-700 font-medium"
+                           >
+                              <Check size={16}/> Запази
+                           </button>
+                           <button 
+                             onClick={() => setIsAddingClass(false)}
+                             className="flex items-center gap-1 bg-white text-gray-600 border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 font-medium"
+                           >
+                              <X size={16}/> Отказ
+                           </button>
+                        </div>
+                    </div>
+                 </div>
+             )}
              
              {classes.map(cls => (
                <div key={cls.id} className="border rounded-xl overflow-hidden shadow-sm bg-white">
@@ -698,10 +927,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                </div>
              ))}
              
-             {classes.length === 0 && (
+             {classes.length === 0 && !isAddingClass && (
                 <div className="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
                    <p className="text-gray-500 mb-2">Все още няма добавени класове.</p>
-                   <button onClick={addClass} className="text-indigo-600 font-bold hover:underline">Добави първия клас</button>
+                   <button onClick={() => setIsAddingClass(true)} className="text-indigo-600 font-bold hover:underline">Добави първия клас</button>
                 </div>
              )}
           </div>

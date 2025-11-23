@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { ScheduleItem, ClassGroup, Teacher, Room, Subject, GridSlot, DragItem, RoomType, SchoolConfig } from '../types';
 import { DAYS } from '../constants';
-import { Lock, Unlock, AlertTriangle, Check, BrainCircuit, Sparkles, Loader2, Ban } from 'lucide-react';
+import { Lock, Unlock, AlertTriangle, Check, BrainCircuit, Sparkles, Loader2, Ban, Info } from 'lucide-react';
 import { analyzeScheduleWithGemini, generateScheduleWithGemini } from '../services/geminiService';
 
 interface SchedulerProps {
@@ -20,7 +20,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
 }) => {
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
-  const [conflictSlots, setConflictSlots] = useState<string[]>([]);
+  const [conflictSlots, setConflictSlots] = useState<Record<string, string>>({});
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -47,37 +47,59 @@ const Scheduler: React.FC<SchedulerProps> = ({
     return needed;
   }, [schedule, selectedClass]);
 
-  // -- Helper: Detect Conflicts --
-  const checkConflicts = (day: number, period: number, teacherId: string, currentClassId: string, ignoreScheduleId?: string): boolean => {
-    // 1. Teacher is busy elsewhere
-    const teacherBusy = schedule.some(s => 
+  // -- Helper: Detect Conflict Reason --
+  const getConflictReason = (day: number, period: number, teacherId: string, currentClassId: string, ignoreScheduleId?: string): string | null => {
+    // 1. Teacher Constraints (Traveling / No First / No Last)
+    const teacher = teachers.find(t => t.id === teacherId);
+    if (teacher) {
+        if (teacher.constraints?.travels && period === 0) {
+            return "Пътуващ учител (без 1-ви час)";
+        }
+        if (teacher.constraints?.cannotTeachLast && period === periods.length - 1) {
+            return "Ограничение (без последен час)";
+        }
+    }
+
+    // 2. Teacher is busy elsewhere
+    const teacherBusy = schedule.find(s => 
       s.id !== ignoreScheduleId &&
       s.dayIndex === day &&
       s.periodIndex === period &&
       s.teacherId === teacherId
     );
 
-    // 2. Class is busy (shouldn't happen in class view, but good for validation)
+    if (teacherBusy) {
+        // Find which class the teacher is teaching
+        const busyClass = classes.find(c => c.id === teacherBusy.classGroupId)?.name;
+        return `Учителят е зает ${busyClass ? `(Клас ${busyClass})` : ''}`;
+    }
+
+    // 3. Class is busy
     const classBusy = schedule.some(s => 
       s.id !== ignoreScheduleId &&
       s.dayIndex === day &&
       s.periodIndex === period &&
       s.classGroupId === currentClassId
     );
+    
+    if (classBusy) {
+        return "Класът вече има час";
+    }
 
-    return teacherBusy || classBusy;
+    return null;
   };
 
   const getConflictMap = (teacherId: string, currentClassId: string, subjectId: string, ignoreScheduleId?: string) => {
-     const conflicts: string[] = [];
+     const conflicts: Record<string, string> = {};
      const subject = subjects.find(s => s.id === subjectId);
      const requiredRoomType = subject?.requiresRoomType || RoomType.CLASSROOM;
 
      for(let d=0; d<DAYS.length; d++) {
        for(let p=0; p<periods.length; p++) {
-          // 1. Basic Conflict (Teacher or Class busy)
-          if (checkConflicts(d, p, teacherId, currentClassId, ignoreScheduleId)) {
-             conflicts.push(`${d}-${p}`);
+          // 1. Basic Constraints & Teacher/Class Availability
+          const reason = getConflictReason(d, p, teacherId, currentClassId, ignoreScheduleId);
+          if (reason) {
+             conflicts[`${d}-${p}`] = reason;
              continue;
           }
 
@@ -96,7 +118,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
           });
 
           if (!hasFreeRoom) {
-             conflicts.push(`${d}-${p}`);
+             conflicts[`${d}-${p}`] = `Няма свободен кабинет (${requiredRoomType})`;
           }
        }
      }
@@ -114,7 +136,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
   const handleDragEnd = () => {
     setDraggedItem(null);
-    setConflictSlots([]);
+    setConflictSlots({});
   };
 
   const handleDragOver = (e: React.DragEvent, isConflict: boolean) => {
@@ -131,7 +153,12 @@ const Scheduler: React.FC<SchedulerProps> = ({
     if (!draggedItem || !selectedClass) return;
 
     // Hard Constraint Check: Is the slot actually available?
-    const isConflict = checkConflicts(dayIndex, periodIndex, draggedItem.teacherId, draggedItem.classGroupId, draggedItem.scheduleId);
+    const conflictReason = getConflictReason(dayIndex, periodIndex, draggedItem.teacherId, draggedItem.classGroupId, draggedItem.scheduleId);
+    
+    if (conflictReason) {
+      alert(`Конфликт! ${conflictReason}`);
+      return;
+    }
     
     // Find a room (Simplistic allocation: First available room of required type)
     const subject = subjects.find(s => s.id === draggedItem.subjectId);
@@ -148,11 +175,6 @@ const Scheduler: React.FC<SchedulerProps> = ({
       );
       return !isRoomBusy && r.capacity >= selectedClass.studentsCount;
     });
-
-    if (isConflict) {
-      alert("Конфликт! Този учител или клас вече е зает по това време.");
-      return;
-    }
 
     if (!availableRoom) {
       alert(`Няма свободен кабинет тип "${requiredRoomType}" за този час!`);
@@ -191,6 +213,14 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
   const toggleLock = (id: string) => {
     setSchedule(prev => prev.map(item => item.id === id ? { ...item, locked: !item.locked } : item));
+  };
+
+  const changeRoom = (scheduleId: string, newRoomId: string) => {
+    setSchedule(prev => prev.map(item => 
+      item.id === scheduleId 
+      ? { ...item, roomId: newRoomId } 
+      : item
+    ));
   };
 
   const handleGeminiAnalysis = async () => {
@@ -359,10 +389,10 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
                     const subject = subjects.find(s => s.id === cellItem?.subjectId);
                     const teacher = teachers.find(t => t.id === cellItem?.teacherId);
-                    const room = rooms.find(r => r.id === cellItem?.roomId);
-
-                    // Conflict Visuals
-                    const isConflictSlot = conflictSlots.includes(`${dIndex}-${pIndex}`);
+                    
+                    // Conflict Logic
+                    const conflictReason = conflictSlots[`${dIndex}-${pIndex}`];
+                    const isConflictSlot = !!conflictReason;
                     const isDragActive = !!draggedItem;
                     
                     let cellClasses = "border-r last:border-r-0 relative p-1 transition-all duration-200 ";
@@ -384,11 +414,15 @@ const Scheduler: React.FC<SchedulerProps> = ({
                         onDragOver={(e) => handleDragOver(e, isConflictSlot)}
                         onDrop={(e) => handleDrop(e, dIndex, pIndex)}
                         className={cellClasses}
+                        title={conflictReason || ''} // Fallback tooltip
                       >
-                         {/* Conflict Overlay Icon */}
+                         {/* Conflict Overlay with Reason */}
                          {isDragActive && isConflictSlot && (
-                             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
-                                <Ban className="text-red-500/70" size={28} strokeWidth={1.5} />
+                             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/70 backdrop-blur-[1px] p-2 text-center animate-in fade-in">
+                                <Ban className="text-red-500 mb-1" size={24} strokeWidth={2} />
+                                <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm leading-tight border border-red-200">
+                                   {conflictReason}
+                                </span>
                              </div>
                          )}
 
@@ -424,9 +458,29 @@ const Scheduler: React.FC<SchedulerProps> = ({
                                 <div className="text-[10px] text-gray-600 flex items-center gap-1">
                                   <span className="truncate max-w-[80px]">{teacher?.name.split(' ')[1]}</span>
                                 </div>
-                                <div className="text-[10px] text-gray-500 bg-white/50 px-1 rounded inline-block mt-1">
-                                  Стая {room?.name.split('(')[0]}
-                                </div>
+                                <select
+                                  value={cellItem.roomId}
+                                  onChange={(e) => changeRoom(cellItem.id, e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="mt-1 text-[10px] text-gray-700 bg-white/80 border border-indigo-100 rounded px-1 py-0.5 w-full max-w-full truncate focus:ring-1 focus:ring-indigo-300 outline-none cursor-pointer"
+                                  title="Смени кабинет"
+                                >
+                                  {rooms.map(r => {
+                                      // Check if room is busy at this time (by another class)
+                                      const isBusy = schedule.some(s => 
+                                          s.roomId === r.id && 
+                                          s.dayIndex === dIndex && 
+                                          s.periodIndex === pIndex && 
+                                          s.id !== cellItem.id
+                                      );
+                                      return (
+                                          <option key={r.id} value={r.id}>
+                                              {r.name.split('(')[0]} {isBusy ? '(Зает)' : ''}
+                                          </option>
+                                      );
+                                  })}
+                                </select>
                               </div>
                            </div>
                          ) : (

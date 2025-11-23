@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { ScheduleItem, Teacher, ClassGroup, Subject, Room, SchoolConfig, RoomType } from '../types';
 
@@ -98,7 +99,9 @@ export const generateScheduleWithGemini = async (
     const simplifiedTeachers = teachers.map(t => ({
       id: t.id,
       maxHours: t.maxHoursPerDay,
-      unwantedDays: t.unwantedDays // 0=Mon, 4=Fri
+      unwantedDays: t.unwantedDays, // 0=Mon, 4=Fri
+      travels: t.constraints?.travels, // Cannot have 1st period
+      cannotTeachLast: t.constraints?.cannotTeachLast // Cannot have last period
     }));
 
     // 2. Construct the prompt
@@ -117,6 +120,8 @@ export const generateScheduleWithGemini = async (
       3. Един кабинет може да се ползва само от един клас в даден период.
       4. Типът на кабинета трябва да отговаря на изискването на предмета (roomType).
       5. Учителят не трябва да има час в дните от "unwantedDays".
+      6. Ако учителят има "travels: true", той НЕ МОЖЕ да има час в период 0 (1-ви час).
+      7. Ако учителят има "cannotTeachLast: true", той НЕ МОЖЕ да има час в период ${config.totalPeriods - 1} (последен час).
       
       Задача:
       Генерирай възможно най-пълното разписание, спазвайки горните правила.
