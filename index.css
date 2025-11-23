@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+@media print {
+
+    /* Hide everything by default */
+    body>* {
+        display: none !important;
+    }
+
+    /* Show only the printable area */
+    #printable-area {
+        display: block !important;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+
+    /* Ensure page breaks work */
+    .page-break {
+        break-after: page;
+        page-break-after: always;
+    }
+
+    /* Reset background colors for printing */
+    body {
+        background: white;
+    }
+}

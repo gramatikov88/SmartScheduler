@@ -4,7 +4,7 @@ import { DAYS } from '../constants';
 import { Lock, Unlock, BrainCircuit, Sparkles, Loader2, Ban, FileSpreadsheet, FileDown } from 'lucide-react';
 import { analyzeScheduleWithGemini, generateScheduleWithGemini } from '../services/geminiService';
 import { exportService } from '../services/exportService';
-// import { PDFExportButton } from './pdf/PDFExportButton';
+import { PrintableSchedule } from './PrintableSchedule';
 
 interface SchedulerProps {
   schedule: ScheduleItem[];
@@ -27,6 +27,16 @@ const Scheduler: React.FC<SchedulerProps> = ({
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [printMode, setPrintMode] = useState<'class' | 'master' | null>(null);
+
+  const handlePrint = (mode: 'class' | 'master') => {
+    setPrintMode(mode);
+    // Allow React to render the printable area before triggering print
+    setTimeout(() => {
+      window.print();
+      setPrintMode(null);
+    }, 100);
+  };
 
   const selectedClass = classes.find(c => c.id === selectedClassId);
 
@@ -412,35 +422,24 @@ const Scheduler: React.FC<SchedulerProps> = ({
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">Експорт</div>
             <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-gray-200 shadow-sm flex-wrap justify-center">
 
-              {/* PDF Export Removed as per user request to restore stability */}
-              {/* 
-              <PDFExportButton
-                type="master"
-                schedule={schedule}
-                subjects={subjects}
-                teachers={teachers}
-                rooms={rooms}
-                classes={classes}
-                label="Пълна Програма (PDF)"
-                fileName={`Uchilishna_Programa_${new Date().toISOString().split('T')[0]}.pdf`}
+              {/* Browser Print Buttons */}
+              <button
+                onClick={() => handlePrint('master')}
                 className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
-              />
+              >
+                <FileDown size={16} />
+                Пълна Програма (Печат)
+              </button>
 
               {selectedClassId && (
-                <PDFExportButton
-                  type="class"
-                  data={classes.find(c => c.id === selectedClassId)}
-                  schedule={schedule}
-                  subjects={subjects}
-                  teachers={teachers}
-                  rooms={rooms}
-                  classes={classes}
-                  label="Клас (PDF)"
-                  fileName={`Programa_${classes.find(c => c.id === selectedClassId)?.name || 'Klas'}.pdf`}
+                <button
+                  onClick={() => handlePrint('class')}
                   className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-                />
+                >
+                  <FileDown size={16} />
+                  Клас (Печат)
+                </button>
               )}
-              */}
 
               <div className="w-full h-px bg-gray-100 my-1"></div>
 
@@ -610,6 +609,22 @@ const Scheduler: React.FC<SchedulerProps> = ({
           </div>
         </div>
       </div >
+
+      {/* Printable Area (Hidden on Screen, Visible on Print) */}
+      <div id="printable-area" className={printMode ? 'block' : 'hidden'}>
+        {printMode && (
+          <PrintableSchedule
+            mode={printMode}
+            selectedClassId={selectedClassId}
+            schedule={schedule}
+            classes={classes}
+            teachers={teachers}
+            subjects={subjects}
+            rooms={rooms}
+            periods={periods}
+          />
+        )}
+      </div>
     </div >
   );
 };
