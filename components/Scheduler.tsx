@@ -106,6 +106,34 @@ const Scheduler: React.FC<SchedulerProps> = ({
       return "Класът вече има час";
     }
 
+    // 4. Max Gaps Check
+    if (teacher && teacher.constraints?.maxGaps !== undefined) {
+      // Get all lessons for this teacher on this day
+      const dailyLessons = schedule.filter(s =>
+        s.teacherId === teacherId &&
+        s.dayIndex === day &&
+        s.id !== ignoreScheduleId // Exclude the one being moved if it exists
+      );
+
+      // Add the potential new lesson
+      const potentialLessons = [
+        ...dailyLessons,
+        { periodIndex: period } // We only need the period index
+      ].sort((a, b) => a.periodIndex - b.periodIndex);
+
+      if (potentialLessons.length > 1) {
+        const firstPeriod = potentialLessons[0].periodIndex;
+        const lastPeriod = potentialLessons[potentialLessons.length - 1].periodIndex;
+        const totalSpan = lastPeriod - firstPeriod + 1;
+        const actualLessonsCount = potentialLessons.length;
+        const gaps = totalSpan - actualLessonsCount;
+
+        if (gaps > teacher.constraints.maxGaps) {
+          return `Твърде много прозорци (${gaps} > ${teacher.constraints.maxGaps})`;
+        }
+      }
+    }
+
     return null;
   };
 
@@ -522,6 +550,9 @@ const Scheduler: React.FC<SchedulerProps> = ({
                             </div>
                             <select
                               title="Смени кабинет"
+                              value={cellItem.roomId}
+                              onChange={(e) => changeRoom(cellItem.id, e.target.value)}
+                              className="w-full text-[10px] p-0.5 border border-gray-200 rounded mt-1 bg-white/50 focus:bg-white"
                             >
                               {rooms.map(r => {
                                 // Check if room is busy at this time (by another class)
@@ -532,7 +563,11 @@ const Scheduler: React.FC<SchedulerProps> = ({
                                   s.id !== cellItem.id
                                 );
                                 return (
-                                  <option key={r.id} value={r.id}>
+                                  <option
+                                    key={r.id}
+                                    value={r.id}
+                                    className={isBusy ? "text-orange-600 font-bold bg-orange-50" : ""}
+                                  >
                                     {r.name.split('(')[0]} {isBusy ? '(Зает)' : ''}
                                   </option>
                                 );

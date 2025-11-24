@@ -3,11 +3,16 @@ import { GoogleGenAI } from "@google/genai";
 import { ScheduleItem, Teacher, ClassGroup, Subject, Room, SchoolConfig, RoomType } from '../types';
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("Липсва API ключ за Gemini. Моля, конфигурирайте го.");
-  }
-  return new GoogleGenAI({ apiKey: apiKey });
+  // 1. Check Local Storage (User configured via UI)
+  const localKey = localStorage.getItem('GEMINI_API_KEY');
+  if (localKey) return new GoogleGenAI({ apiKey: localKey });
+
+  // 2. Check Environment Variables (Dev/Build configured)
+  const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (envKey) return new GoogleGenAI({ apiKey: envKey });
+
+  // 3. Fallback / Error
+  throw new Error("Липсва API ключ за Gemini. Моля, добавете го в Настройки -> API.");
 };
 
 export const analyzeScheduleWithGemini = async (
@@ -85,12 +90,12 @@ export const generateScheduleWithGemini = async (
     const simplifiedClasses = classes.map(c => {
       // Filter the curriculum items
       const remainingCurriculum = c.curriculum.map(curr => {
-        const alreadyScheduledCount = currentSchedule.filter(s => 
+        const alreadyScheduledCount = currentSchedule.filter(s =>
           s.classGroupId === c.id && s.subjectId === curr.subjectId
         ).length;
 
         const remainingHours = Math.max(0, curr.hoursPerWeek - alreadyScheduledCount);
-        
+
         return {
           subjectId: curr.subjectId,
           teacherId: curr.teacherId,
@@ -126,11 +131,11 @@ export const generateScheduleWithGemini = async (
 
     // Identify occupied slots to pass as constraints
     const occupiedSlots = currentSchedule.map(s => ({
-       d: s.dayIndex,
-       p: s.periodIndex,
-       c: s.classGroupId, // Class is busy
-       t: s.teacherId,    // Teacher is busy
-       r: s.roomId        // Room is busy
+      d: s.dayIndex,
+      p: s.periodIndex,
+      c: s.classGroupId, // Class is busy
+      t: s.teacherId,    // Teacher is busy
+      r: s.roomId        // Room is busy
     }));
 
     // 2. Construct the prompt
@@ -171,7 +176,7 @@ export const generateScheduleWithGemini = async (
 
     // 3. Call Gemini
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', 
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json"
@@ -186,14 +191,14 @@ export const generateScheduleWithGemini = async (
 
     let rawSchedule;
     try {
-        rawSchedule = JSON.parse(jsonText);
+      rawSchedule = JSON.parse(jsonText);
     } catch (e) {
-        console.error("Failed to parse JSON:", jsonText);
-        throw new Error("AI генерира невалиден JSON формат.");
+      console.error("Failed to parse JSON:", jsonText);
+      throw new Error("AI генерира невалиден JSON формат.");
     }
 
     if (!Array.isArray(rawSchedule)) {
-         throw new Error("AI върна некоректна структура (не е масив).");
+      throw new Error("AI върна некоректна структура (не е масив).");
     }
 
     // 4. Validate
