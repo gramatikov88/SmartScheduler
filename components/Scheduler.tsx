@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { ScheduleItem, ClassGroup, Teacher, Room, Subject, DragItem, RoomType, SchoolConfig } from '../types';
 import { DAYS } from '../constants';
-import { Lock, Unlock, BrainCircuit, Sparkles, Loader2, Ban, FileSpreadsheet, FileDown } from 'lucide-react';
-import { analyzeScheduleWithGemini, generateScheduleWithGemini } from '../services/geminiService';
+import { Lock, Unlock, Ban, FileSpreadsheet, Users, School, BrainCircuit } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import { PrintableSchedule } from './PrintableSchedule';
+import { ExportButtons } from './ExportButtons';
 
 interface SchedulerProps {
   schedule: ScheduleItem[];
@@ -14,19 +14,21 @@ interface SchedulerProps {
   subjects: Subject[];
   rooms: Room[];
   periods: string[];
+  analysisResult?: string | null;
+  onClearAnalysis?: () => void;
 }
 
 const Scheduler: React.FC<SchedulerProps> = ({
-  schedule, setSchedule, classes, teachers, subjects, rooms, periods
+  schedule, setSchedule, classes, teachers, subjects, rooms, periods, analysisResult, onClearAnalysis
 }) => {
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(teachers[0]?.id || '');
+  const [viewMode, setViewMode] = useState<'class' | 'teacher'>('class');
+
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [conflictSlots, setConflictSlots] = useState<Record<string, string>>({});
   const [hoveredSlot, setHoveredSlot] = useState<{ d: number, p: number } | null>(null);
 
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [printMode, setPrintMode] = useState<'class' | 'master' | null>(null);
 
   const handlePrint = (mode: 'class' | 'master') => {
@@ -39,6 +41,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
   };
 
   const selectedClass = classes.find(c => c.id === selectedClassId);
+  const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
 
   // -- Helper: Get available unassigned lessons for the selected class --
   const unassignedLessons = useMemo(() => {
@@ -179,7 +182,13 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
   const handleDrop = (e: React.DragEvent, dayIndex: number, periodIndex: number) => {
     e.preventDefault();
-    if (!draggedItem || !selectedClass) return;
+    if (!draggedItem) return;
+
+    // Determine the class for the item being dropped
+    const itemClassId = draggedItem.classGroupId;
+    const itemClass = classes.find(c => c.id === itemClassId);
+
+    if (!itemClass) return;
 
     // Hard Constraint Check: Is the slot actually available?
     const conflictReason = getConflictReason(dayIndex, periodIndex, draggedItem.teacherId, draggedItem.classGroupId, draggedItem.scheduleId);
@@ -210,15 +219,15 @@ const Scheduler: React.FC<SchedulerProps> = ({
         s.roomId === r.id
       );
       // Check capacity
-      return !isRoomBusy && r.capacity >= selectedClass.studentsCount;
+      return !isRoomBusy && r.capacity >= itemClass.studentsCount;
     });
 
     if (!availableRoom) {
       // Determine specific error for better UX
-      const hasCapacity = roomsOfType.some(r => r.capacity >= selectedClass.studentsCount);
+      const hasCapacity = roomsOfType.some(r => r.capacity >= itemClass.studentsCount);
 
       if (!hasCapacity) {
-        alert(`Няма кабинет от тип "${requiredRoomType}" с достатъчен капацитет за този клас (${selectedClass.studentsCount} ученици)! Моля увеличете местата в кабинета или разделете класа.`);
+        alert(`Няма кабинет от тип "${requiredRoomType}" с достатъчен капацитет за този клас (${itemClass.studentsCount} ученици)! Моля увеличете местата в кабинета или разделете класа.`);
       } else {
         alert(`Всички подходящи кабинети ("${requiredRoomType}") са заети в този час!`);
       }
@@ -267,179 +276,113 @@ const Scheduler: React.FC<SchedulerProps> = ({
     ));
   };
 
-  const handleGeminiAnalysis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisResult(null);
-    const result = await analyzeScheduleWithGemini(schedule, teachers, classes, subjects);
-    setAnalysisResult(result);
-    setIsAnalyzing(false);
-  };
-
-  const handleAutoGenerate = async () => {
-    let currentScheduleToKeep: ScheduleItem[] = [];
-
-    if (schedule.length > 0) {
-      // Ask user if they want to complete or restart
-      const shouldComplete = window.confirm(
-        "Разписанието вече съдържа часове.\n\n" +
-        "Натиснете OK, за да ДОВЪРШИТЕ текущото разписание (запазвайки въведеното).\n" +
-        "Натиснете Cancel, ако искате да изтриете всичко и да генерирате наново (или да се откажете)."
-      );
-
-      if (shouldComplete) {
-        currentScheduleToKeep = schedule;
-      } else {
-        // Double check before deleting
-        if (!window.confirm("Сигурни ли сте, че искате да ИЗТРИЕТЕ цялото разписание и да генерирате ново от нулата?")) {
-          return; // Abort
-        }
-        currentScheduleToKeep = [];
-      }
-    }
-
-    setIsGenerating(true);
-    try {
-      const config: SchoolConfig = {
-        startTime: '08:00',
-        lessonDuration: 40,
-        breakDuration: 10,
-        longBreakDuration: 20,
-        longBreakAfterPeriod: 3,
-        totalPeriods: periods.length,
-        customBreaks: {}
-      };
-
-      const newItems = await generateScheduleWithGemini(
-        teachers,
-        classes,
-        rooms,
-        subjects,
-        config,
-        currentScheduleToKeep // Pass existing schedule context
-      );
-
-      if (newItems.length === 0) {
-        alert("Всички часове от учебния план вече са разпределени! Няма какво да се генерира.");
-      } else {
-        // Merge existing with new
-        setSchedule([...currentScheduleToKeep, ...newItems]);
-        alert(`Успешно добавени ${newItems.length} нови часа!`);
-      }
-    } catch (error: any) {
-      console.error(error);
-      alert(`Грешка при генерирането: ${error.message}`);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   return (
     <div className="flex h-full flex-col lg:flex-row overflow-hidden bg-gray-50">
       {/* --- Sidebar: Unassigned Bank --- */}
       <div className="w-full lg:w-80 bg-white border-r border-gray-200 flex flex-col p-4 shadow-sm z-10">
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Избери Клас</label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+
+        {/* View Mode Toggles */}
+        <div className="flex p-1 bg-gray-100 rounded-lg mb-4">
+          <button
+            onClick={() => setViewMode('class')}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'class' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
           >
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+            <School size={16} />
+            Класове
+          </button>
+          <button
+            onClick={() => setViewMode('teacher')}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'teacher' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <Users size={16} />
+            Учители
+          </button>
         </div>
 
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Неразпределени часове</h3>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {viewMode === 'class' ? 'Избери Клас' : 'Избери Учител'}
+          </label>
 
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-          {unassignedLessons.length === 0 && (
-            <div className="text-center text-gray-400 py-8 text-sm italic">Всички часове за {selectedClass?.name} са разпределени! 🎉</div>
+          {viewMode === 'class' ? (
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <select
+              value={selectedTeacherId}
+              onChange={(e) => setSelectedTeacherId(e.target.value)}
+              className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-purple-500 focus:border-purple-500"
+            >
+              {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
           )}
-          {unassignedLessons.map((item, idx) => {
-            const subject = subjects.find(s => s.id === item.subjectId);
-            const teacher = teachers.find(t => t.id === item.teacherId);
-            return (
-              <div
-                key={`unassigned_${idx}`}
-                draggable
-                onDragStart={(e) => handleDragStart(e, {
-                  type: 'UNASSIGNED_LESSON',
-                  subjectId: item.subjectId,
-                  teacherId: item.teacherId,
-                  classGroupId: item.classGroupId,
-                  duration: 1
-                })}
-                onDragEnd={handleDragEnd}
-                className="bg-white border border-l-4 border-l-indigo-500 border-gray-200 p-3 rounded shadow-sm cursor-move hover:shadow-md transition-all active:scale-95 select-none"
-              >
-                <div className="font-semibold text-gray-800 text-sm">{subject?.name}</div>
-                <div className="text-xs text-gray-500 flex justify-between mt-1">
-                  <span>{teacher?.name}</span>
-                </div>
-              </div>
-            );
-          })}
         </div>
+
+        {viewMode === 'class' && (
+          <>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Неразпределени часове</h3>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {unassignedLessons.length === 0 && (
+                <div className="text-center text-gray-400 py-8 text-sm italic">Всички часове за {selectedClass?.name} са разпределени! 🎉</div>
+              )}
+              {unassignedLessons.map((item, idx) => {
+                const subject = subjects.find(s => s.id === item.subjectId);
+                const teacher = teachers.find(t => t.id === item.teacherId);
+                return (
+                  <div
+                    key={`unassigned_${idx}`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, {
+                      type: 'UNASSIGNED_LESSON',
+                      subjectId: item.subjectId,
+                      teacherId: item.teacherId,
+                      classGroupId: item.classGroupId,
+                      duration: 1
+                    })}
+                    onDragEnd={handleDragEnd}
+                    className="bg-white border border-l-4 border-l-indigo-500 border-gray-200 p-3 rounded shadow-sm cursor-move hover:shadow-md transition-all active:scale-95 select-none"
+                  >
+                    <div className="font-semibold text-gray-800 text-sm">{subject?.name}</div>
+                    <div className="text-xs text-gray-500 flex justify-between mt-1">
+                      <span>{teacher?.name}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {viewMode === 'teacher' && (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm italic p-4 text-center">
+            <Users size={48} className="mb-2 opacity-20" />
+            <p>Преглед на програмата по учители.</p>
+            <p className="text-xs mt-2">Можете да местите часове и тук, но за добавяне на нови използвайте изглед "Класове".</p>
+          </div>
+        )}
 
         <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-          {/* Auto Generate Button */}
-          <button
-            onClick={handleAutoGenerate}
-            disabled={isGenerating || isAnalyzing}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-3 rounded-lg shadow hover:opacity-90 transition disabled:opacity-50"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                <span>Генериране...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles size={18} />
-                <span>AI Генериране</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={handleGeminiAnalysis}
-            disabled={isAnalyzing || isGenerating}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 p-3 rounded-lg shadow-sm hover:bg-gray-50 transition disabled:opacity-50"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                <span>Анализиране...</span>
-              </>
-            ) : (
-              <>
-                <BrainCircuit size={18} />
-                <span>Анализ на качеството</span>
-              </>
-            )}
-          </button>
-
           <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">Експорт</div>
             <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-gray-200 shadow-sm flex-wrap justify-center">
 
-              {/* Browser Print Buttons */}
-              <button
-                onClick={() => handlePrint('master')}
-                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
-              >
-                <FileDown size={16} />
-                Пълна Програма (Печат)
-              </button>
-
-              {selectedClassId && (
-                <button
-                  onClick={() => handlePrint('class')}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  <FileDown size={16} />
-                  Клас (Печат)
-                </button>
-              )}
+              <ExportButtons
+                schedule={schedule}
+                classes={classes}
+                teachers={teachers}
+                subjects={subjects}
+                rooms={rooms}
+                periods={periods}
+                selectedClassId={selectedClassId}
+                selectedTeacherId={selectedTeacherId}
+                viewMode={viewMode}
+              />
 
               <div className="w-full h-px bg-gray-100 my-1"></div>
 
@@ -462,7 +405,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
           <div className="mb-6 bg-white p-6 rounded-xl shadow border border-purple-100 animate-in fade-in slide-in-from-top-4">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-lg font-bold text-purple-800 flex items-center gap-2"><BrainCircuit size={20} /> Анализ на разписанието</h3>
-              <button onClick={() => setAnalysisResult(null)} className="text-gray-400 hover:text-gray-600">&times;</button>
+              <button onClick={onClearAnalysis} className="text-gray-400 hover:text-gray-600">&times;</button>
             </div>
             <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
               {analysisResult}
@@ -470,9 +413,9 @@ const Scheduler: React.FC<SchedulerProps> = ({
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden min-w-[800px]">
+        <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden min-w-[1000px]">
           {/* Header Row (Days) */}
-          <div className="grid grid-cols-[80px_repeat(5,1fr)] bg-gray-50 border-b border-gray-200">
+          <div className="grid grid-cols-[80px_repeat(5,minmax(0,1fr))] bg-gray-50 border-b border-gray-200">
             <div className="p-4 text-xs font-bold text-gray-400 uppercase text-center border-r">Час</div>
             {DAYS.map((day, i) => (
               <div key={day} className={`p-4 text-center font-semibold text-sm text-gray-700 border-r last:border-r-0 ${i === 4 ? 'bg-red-50/30' : ''}`}>
@@ -484,7 +427,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
           {/* Grid Body */}
           <div className="divide-y divide-gray-100">
             {periods.map((periodLabel, pIndex) => (
-              <div key={pIndex} className="grid grid-cols-[80px_repeat(5,1fr)] min-h-[100px]">
+              <div key={pIndex} className="grid grid-cols-[80px_repeat(5,minmax(0,1fr))] min-h-[100px]">
                 {/* Time Label */}
                 <div className="p-2 flex items-center justify-center text-xs font-medium text-gray-500 bg-gray-50/50 border-r">
                   {periodLabel}
@@ -492,15 +435,18 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
                 {/* Day Cells */}
                 {DAYS.map((_, dIndex) => {
-                  // Find scheduled item for this slot (for the SELECTED class)
+                  // Find scheduled item for this slot
+                  // If viewMode is 'class', filter by selectedClassId
+                  // If viewMode is 'teacher', filter by selectedTeacherId
                   const cellItem = schedule.find(s =>
-                    s.classGroupId === selectedClassId &&
                     s.dayIndex === dIndex &&
-                    s.periodIndex === pIndex
+                    s.periodIndex === pIndex &&
+                    (viewMode === 'class' ? s.classGroupId === selectedClassId : s.teacherId === selectedTeacherId)
                   );
 
                   const subject = subjects.find(s => s.id === cellItem?.subjectId);
                   const teacher = teachers.find(t => t.id === cellItem?.teacherId);
+                  const classGroup = classes.find(c => c.id === cellItem?.classGroupId);
 
                   // Conflict Logic
                   const conflictReason = conflictSlots[`${dIndex}-${pIndex}`];
@@ -568,14 +514,13 @@ const Scheduler: React.FC<SchedulerProps> = ({
                           </div>
                           <div className="mt-1">
                             <div className="text-[10px] text-gray-600 flex items-center gap-1">
-                              <span className="truncate max-w-[80px]">{teacher?.name.split(' ')[1]}</span>
+                              {viewMode === 'class' ? (
+                                <span className="truncate max-w-[80px]">{teacher?.name.split(' ')[1]}</span>
+                              ) : (
+                                <span className="truncate max-w-[80px] font-semibold text-indigo-700">{classGroup?.name}</span>
+                              )}
                             </div>
                             <select
-                              value={cellItem.roomId}
-                              onChange={(e) => changeRoom(cellItem.id, e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              className="mt-1 text-[10px] text-gray-700 bg-white/80 border border-indigo-100 rounded px-1 py-0.5 w-full max-w-full truncate focus:ring-1 focus:ring-indigo-300 outline-none cursor-pointer"
                               title="Смени кабинет"
                             >
                               {rooms.map(r => {

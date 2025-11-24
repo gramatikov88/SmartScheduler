@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar, Settings, Grid, School } from 'lucide-react';
+import { Calendar, Settings, Grid, School, Sparkles, BrainCircuit, Loader2 } from 'lucide-react';
 import SetupWizard from './components/SetupWizard';
 import Scheduler from './components/Scheduler';
 import { generatePeriods } from './constants';
 import { SchoolContextProvider, useSchool } from './context/SchoolContext';
+import { analyzeScheduleWithGemini, generateScheduleWithGemini } from './services/geminiService';
+import { ScheduleItem, SchoolConfig } from './types';
 
 const AppContent: React.FC = () => {
   const [activeView, setActiveView] = useState<'setup' | 'scheduler'>('scheduler');
@@ -21,6 +23,73 @@ const AppContent: React.FC = () => {
   } = useSchool();
 
   const periods = useMemo(() => generatePeriods(config), [config]);
+
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGeminiAnalysis = async () => {
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+    const result = await analyzeScheduleWithGemini(schedule, teachers, classes, subjects);
+    setAnalysisResult(result);
+    setIsAnalyzing(false);
+  };
+
+  const handleAutoGenerate = async () => {
+    let currentScheduleToKeep: ScheduleItem[] = [];
+
+    if (schedule.length > 0) {
+      const shouldComplete = window.confirm(
+        "Разписанието вече съдържа часове.\n\n" +
+        "Натиснете OK, за да ДОВЪРШИТЕ текущото разписание (запазвайки въведеното).\n" +
+        "Натиснете Cancel, ако искате да изтриете всичко и да генерирате наново (или да се откажете)."
+      );
+
+      if (shouldComplete) {
+        currentScheduleToKeep = schedule;
+      } else {
+        if (!window.confirm("Сигурни ли сте, че искате да ИЗТРИЕТЕ цялото разписание и да генерирате ново от нулата?")) {
+          return;
+        }
+        currentScheduleToKeep = [];
+      }
+    }
+
+    setIsGenerating(true);
+    try {
+      const config: SchoolConfig = {
+        startTime: '08:00',
+        lessonDuration: 40,
+        breakDuration: 10,
+        longBreakDuration: 20,
+        longBreakAfterPeriod: 3,
+        totalPeriods: periods.length,
+        customBreaks: {}
+      };
+
+      const newItems = await generateScheduleWithGemini(
+        teachers,
+        classes,
+        rooms,
+        subjects,
+        config,
+        currentScheduleToKeep
+      );
+
+      if (newItems.length === 0) {
+        alert("Всички часове от учебния план вече са разпределени! Няма какво да се генерира.");
+      } else {
+        setSchedule([...currentScheduleToKeep, ...newItems]);
+        alert(`Успешно добавени ${newItems.length} нови часа!`);
+      }
+    } catch (error: any) {
+      console.error(error);
+      alert(`Грешка при генерирането: ${error.message}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -44,12 +113,12 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        <nav className="flex bg-gray-100 p-1 rounded-lg">
+        <nav className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => setActiveView('setup')}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === 'setup'
-                ? 'bg-white text-indigo-700 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
               }`}
           >
             <Settings size={16} /> Настройки
@@ -57,11 +126,31 @@ const AppContent: React.FC = () => {
           <button
             onClick={() => setActiveView('scheduler')}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === 'scheduler'
-                ? 'bg-white text-indigo-700 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
               }`}
           >
             <Calendar size={16} /> Програма
+          </button>
+
+          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+          <button
+            onClick={handleAutoGenerate}
+            disabled={isGenerating || isAnalyzing || activeView !== 'scheduler'}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            AI Генериране
+          </button>
+
+          <button
+            onClick={handleGeminiAnalysis}
+            disabled={isAnalyzing || isGenerating || activeView !== 'scheduler'}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
+            Анализ
           </button>
         </nav>
 
@@ -94,6 +183,8 @@ const AppContent: React.FC = () => {
               subjects={subjects}
               rooms={rooms}
               periods={periods}
+              analysisResult={analysisResult}
+              onClearAnalysis={() => setAnalysisResult(null)}
             />
           </div>
         )}
