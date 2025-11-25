@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ScheduleItem, ClassGroup, Teacher, Room, Subject, DragItem, RoomType, SchoolConfig } from '../types';
 import { DAYS } from '../constants';
-import { Lock, Unlock, Ban, FileSpreadsheet, Users, School, BrainCircuit } from 'lucide-react';
+import { Lock, Unlock, Ban, FileSpreadsheet, Users, School, BrainCircuit, AlertCircle } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import { PrintableSchedule } from './PrintableSchedule';
 import { ExportButtons } from './ExportButtons';
@@ -103,7 +103,16 @@ const Scheduler: React.FC<SchedulerProps> = ({
     );
 
     if (classBusy) {
-      return "Класът вече има час";
+      // Resource Teacher Exception:
+      // If the teacher being scheduled IS a resource teacher, they CAN overlap with a regular lesson.
+      // BUT, if the slot is already occupied by ANOTHER Resource Teacher, we might want to block it (optional, but safer).
+      // For now, we just allow the overlap if the incoming teacher is Resource.
+      if (teacher?.isResourceTeacher) {
+        // Allow overlap
+      } else {
+        // Regular teacher cannot overlap
+        return "Класът вече има час";
+      }
     }
 
     // 4. Max Gaps Check
@@ -351,6 +360,60 @@ const Scheduler: React.FC<SchedulerProps> = ({
           )}
         </div>
 
+        {/* Validation Warnings */}
+        {(() => {
+          const warnings: string[] = [];
+          if (viewMode === 'class' && selectedClass) {
+            selectedClass.curriculum.forEach(item => {
+              if (item.requiresDoublePeriod) {
+                const subject = subjects.find(s => s.id === item.subjectId);
+                const classSchedule = schedule.filter(s => s.classGroupId === selectedClass.id && s.subjectId === item.subjectId);
+
+                // Group by day
+                const byDay: Record<number, number[]> = {};
+                classSchedule.forEach(s => {
+                  if (!byDay[s.dayIndex]) byDay[s.dayIndex] = [];
+                  byDay[s.dayIndex].push(s.periodIndex);
+                });
+
+                // Check for at least one block
+                let hasBlock = false;
+                Object.values(byDay).forEach(periods => {
+                  periods.sort((a, b) => a - b);
+                  for (let i = 0; i < periods.length - 1; i++) {
+                    if (periods[i + 1] === periods[i] + 1) {
+                      hasBlock = true;
+                      break;
+                    }
+                  }
+                });
+
+                // Only warn if we have scheduled enough hours to potentially form a block (>= 2)
+                // AND we haven't found a block yet.
+                if (classSchedule.length >= 2 && !hasBlock) {
+                  warnings.push(`Предметът "${subject?.name}" изисква блок (сдвоен час), но такъв липсва.`);
+                }
+              }
+            });
+          }
+
+          if (warnings.length > 0) {
+            return (
+              <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-3 animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center gap-2 text-orange-800 font-bold text-xs uppercase mb-2">
+                  <AlertCircle size={14} /> Внимание
+                </div>
+                <ul className="space-y-1">
+                  {warnings.map((w, i) => (
+                    <li key={i} className="text-xs text-orange-700 leading-tight">• {w}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {viewMode === 'class' && (
           <>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Неразпределени часове</h3>
@@ -463,18 +526,57 @@ const Scheduler: React.FC<SchedulerProps> = ({
 
                 {/* Day Cells */}
                 {DAYS.map((_, dIndex) => {
-                  // Find scheduled item for this slot
-                  // If viewMode is 'class', filter by selectedClassId
-                  // If viewMode is 'teacher', filter by selectedTeacherId
-                  const cellItem = schedule.find(s =>
+                  // Find scheduled items for this slot
+                  const allItemsInSlot = schedule.filter(s =>
                     s.dayIndex === dIndex &&
-                    s.periodIndex === pIndex &&
-                    (viewMode === 'class' ? s.classGroupId === selectedClassId : s.teacherId === selectedTeacherId)
+                    s.periodIndex === pIndex
                   );
+
+                  let cellItem: ScheduleItem | undefined;
+                  let resourceItem: ScheduleItem | undefined;
+
+                  if (viewMode === 'class') {
+                    // In class view, we want the main lesson for this class
+                    cellItem = allItemsInSlot.find(s => s.classGroupId === selectedClassId && !teachers.find(t => t.id === s.teacherId)?.isResourceTeacher);
+                    // AND any resource lesson for this class
+                    resourceItem = allItemsInSlot.find(s => s.classGroupId === selectedClassId && teachers.find(t => t.id === s.teacherId)?.isResourceTeacher);
+
+                    // If only resource item exists and no main item, treat resource as main for display purposes if needed, 
+                    // OR just show it as a resource item. Let's show it as main if it's the only one.
+                    if (!cellItem && resourceItem) {
+                      cellItem = resourceItem;
+                      resourceItem = undefined;
+                    }
+                  } else {
+                    // In teacher view, we just want the lesson this teacher is teaching
+                    cellItem = allItemsInSlot.find(s => s.teacherId === selectedTeacherId);
+                  }
 
                   const subject = subjects.find(s => s.id === cellItem?.subjectId);
                   const teacher = teachers.find(t => t.id === cellItem?.teacherId);
                   const classGroup = classes.find(c => c.id === cellItem?.classGroupId);
+
+                  const resourceSubject = subjects.find(s => s.id === resourceItem?.subjectId);
+                  const resourceTeacher = teachers.find(t => t.id === resourceItem?.teacherId);
+
+                  // Double Period Connection Logic (Only for main item)
+                  const prevItem = schedule.find(s =>
+                    s.dayIndex === dIndex &&
+                    s.periodIndex === pIndex - 1 &&
+                    s.classGroupId === cellItem?.classGroupId &&
+                    s.subjectId === cellItem?.subjectId &&
+                    s.teacherId === cellItem?.teacherId
+                  );
+                  const nextItem = schedule.find(s =>
+                    s.dayIndex === dIndex &&
+                    s.periodIndex === pIndex + 1 &&
+                    s.classGroupId === cellItem?.classGroupId &&
+                    s.subjectId === cellItem?.subjectId &&
+                    s.teacherId === cellItem?.teacherId
+                  );
+
+                  const isConnectedTop = !!prevItem && !!cellItem;
+                  const isConnectedBottom = !!nextItem && !!cellItem;
 
                   // Conflict Logic
                   const conflictReason = conflictSlots[`${dIndex}-${pIndex}`];
@@ -486,12 +588,34 @@ const Scheduler: React.FC<SchedulerProps> = ({
                   if (isDragActive) {
                     if (isConflictSlot) {
                       cellClasses += "bg-red-50/60 "; // Saturated background for all conflicts
-                    } else if (!cellItem) {
+                    } else if (!cellItem && !resourceItem) {
                       // Valid drop target (empty slot)
                       cellClasses += "bg-emerald-50 ring-2 ring-inset ring-emerald-300 ring-dashed ";
                     }
                   } else {
                     cellClasses += "bg-white ";
+                  }
+
+                  // Dynamic styles for connected items
+                  let itemClasses = `h-full w-full border p-2 flex flex-col justify-between shadow-sm group relative z-10 `;
+
+                  if (cellItem?.locked) {
+                    itemClasses += 'border-gray-300 bg-gray-50 cursor-not-allowed ';
+                  } else {
+                    itemClasses += 'border-indigo-100 bg-indigo-50/80 cursor-move hover:shadow-md ';
+                  }
+
+                  // Apply connection styles
+                  if (isConnectedTop) {
+                    itemClasses += 'rounded-t-none border-t-0 pt-4 '; // Remove top border/radius, add padding to compensate
+                  } else {
+                    itemClasses += 'rounded-t-lg ';
+                  }
+
+                  if (isConnectedBottom) {
+                    itemClasses += 'rounded-b-none border-b-dashed border-b-indigo-200/50 pb-4 '; // Dashed separator or no border
+                  } else {
+                    itemClasses += 'rounded-b-lg ';
                   }
 
                   return (
@@ -525,10 +649,13 @@ const Scheduler: React.FC<SchedulerProps> = ({
                             origin: { dayIndex: dIndex, periodIndex: pIndex }
                           })}
                           onDragEnd={handleDragEnd}
-                          className={`h-full w-full rounded-lg border p-2 flex flex-col justify-between shadow-sm group relative z-10 ${cellItem.locked ? 'border-gray-300 bg-gray-50 cursor-not-allowed' : 'border-indigo-100 bg-indigo-50/80 cursor-move hover:shadow-md'}`}
+                          className={itemClasses}
                         >
                           <div className="flex justify-between items-start">
-                            <span className={`text-xs font-bold ${cellItem.locked ? 'text-gray-600' : 'text-indigo-900'}`}>{subject?.name}</span>
+                            <span className={`text-xs font-bold ${cellItem.locked ? 'text-gray-600' : 'text-indigo-900'} ${isConnectedTop ? 'opacity-50' : ''}`}>
+                              {subject?.name}
+                              {isConnectedTop && <span className="ml-1 text-[9px] opacity-60">(продължение)</span>}
+                            </span>
                             <div className="flex gap-1">
                               <button onClick={() => toggleLock(cellItem.id)} className="text-gray-400 hover:text-gray-600">
                                 {cellItem.locked ? <Lock size={12} /> : <Unlock size={12} className="opacity-0 group-hover:opacity-100" />}
@@ -548,31 +675,47 @@ const Scheduler: React.FC<SchedulerProps> = ({
                                 <span className="truncate max-w-[80px] font-semibold text-indigo-700">{classGroup?.name}</span>
                               )}
                             </div>
-                            <select
-                              title="Смени кабинет"
-                              value={cellItem.roomId}
-                              onChange={(e) => changeRoom(cellItem.id, e.target.value)}
-                              className="w-full text-[10px] p-0.5 border border-gray-200 rounded mt-1 bg-white/50 focus:bg-white"
-                            >
-                              {rooms.map(r => {
-                                // Check if room is busy at this time (by another class)
-                                const isBusy = schedule.some(s =>
-                                  s.roomId === r.id &&
-                                  s.dayIndex === dIndex &&
-                                  s.periodIndex === pIndex &&
-                                  s.id !== cellItem.id
-                                );
-                                return (
-                                  <option
-                                    key={r.id}
-                                    value={r.id}
-                                    className={isBusy ? "text-orange-600 font-bold bg-orange-50" : ""}
-                                  >
-                                    {r.name.split('(')[0]} {isBusy ? '(Зает)' : ''}
-                                  </option>
-                                );
-                              })}
-                            </select>
+
+                            {/* Resource Teacher Indicator (Overlay) */}
+                            {resourceItem && (
+                              <div className="mt-1 pt-1 border-t border-indigo-200 flex items-center justify-between bg-purple-50 rounded px-1">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-bold text-purple-700 leading-tight">{resourceSubject?.name}</span>
+                                  <span className="text-[8px] text-purple-600">{resourceTeacher?.name.split(' ')[1]}</span>
+                                </div>
+                                <button onClick={() => removeScheduleItem(resourceItem!.id)} className="text-purple-300 hover:text-purple-500">
+                                  &times;
+                                </button>
+                              </div>
+                            )}
+
+                            {!resourceItem && (
+                              <select
+                                title="Смени кабинет"
+                                value={cellItem.roomId}
+                                onChange={(e) => changeRoom(cellItem!.id, e.target.value)}
+                                className="w-full text-[10px] p-0.5 border border-gray-200 rounded mt-1 bg-white/50 focus:bg-white"
+                              >
+                                {rooms.map(r => {
+                                  // Check if room is busy at this time (by another class)
+                                  const isBusy = schedule.some(s =>
+                                    s.roomId === r.id &&
+                                    s.dayIndex === dIndex &&
+                                    s.periodIndex === pIndex &&
+                                    s.id !== cellItem!.id
+                                  );
+                                  return (
+                                    <option
+                                      key={r.id}
+                                      value={r.id}
+                                      className={isBusy ? "text-orange-600 font-bold bg-orange-50" : ""}
+                                    >
+                                      {r.name.split('(')[0]} {isBusy ? '(Зает)' : ''}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -588,7 +731,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
             ))}
           </div>
         </div>
-      </div >
+      </div>
 
       {/* Printable Area (Hidden on Screen, Visible on Print) */}
       <div id="printable-area" className={printMode ? 'block' : 'hidden'}>
@@ -605,7 +748,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
           />
         )}
       </div>
-    </div >
+    </div>
   );
 };
 

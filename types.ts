@@ -45,6 +45,7 @@ export interface Teacher {
   maxHoursPerDay: number;
   unwantedDays: number[]; // 0=Mon, 4=Fri
   constraints: TeacherConstraints;
+  isResourceTeacher?: boolean; // New flag for Resource Teachers
 }
 
 export interface Room {
@@ -71,6 +72,7 @@ export interface ClassGroup {
     subjectId: string;
     hoursPerWeek: number;
     teacherId: string; // Pre-assigned teacher for this class/subject
+    requiresDoublePeriod?: boolean; // If true, requires at least one block of 2 consecutive periods
   }[];
 }
 
@@ -83,6 +85,7 @@ export interface ScheduleItem {
   dayIndex: number; // 0-4 (Mon-Fri)
   periodIndex: number; // 0-6 (1st - 7th hour)
   locked: boolean;
+  isResource?: boolean; // Flag to identify resource lessons
 }
 
 export interface GridSlot {

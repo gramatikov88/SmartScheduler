@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Teacher, Room, ClassGroup, Subject, RoomType, SubjectType, SchoolConfig, SubjectCategory } from '../types';
 import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle, Briefcase, Key } from 'lucide-react';
@@ -51,10 +50,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
 
   // Curriculum Editing State
   const [addingCurriculumToClass, setAddingCurriculumToClass] = useState<string | null>(null);
-  const [newCurriculumState, setNewCurriculumState] = useState<{ subjectId: string, hours: number, teacherId: string }>({
+  const [newCurriculumState, setNewCurriculumState] = useState<{ subjectId: string, hours: number, teacherId: string, requiresDoublePeriod: boolean }>({
     subjectId: '',
     hours: 2,
-    teacherId: ''
+    teacherId: '',
+    requiresDoublePeriod: false
   });
 
   // New Class Form State
@@ -209,7 +209,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
     setClasses(classes.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
-  const updateCurriculumItem = (classId: string, subjectId: string, field: 'hoursPerWeek' | 'teacherId', value: any) => {
+  const updateCurriculumItem = (classId: string, subjectId: string, field: 'hoursPerWeek' | 'teacherId' | 'requiresDoublePeriod', value: any) => {
     setClasses(classes.map(c => {
       if (c.id !== classId) return c;
       const newCurriculum = c.curriculum.map(item =>
@@ -241,7 +241,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
     setNewCurriculumState({
       subjectId: availableSubject.id,
       hours: 2,
-      teacherId: '' // Default to empty, will force user to select or remain unassigned
+      teacherId: '',
+      requiresDoublePeriod: false
     });
   };
 
@@ -255,7 +256,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
         curriculum: [...c.curriculum, {
           subjectId: newCurriculumState.subjectId,
           hoursPerWeek: newCurriculumState.hours,
-          teacherId: newCurriculumState.teacherId // Can be empty string if unassigned
+          teacherId: newCurriculumState.teacherId, // Can be empty string if unassigned
+          requiresDoublePeriod: newCurriculumState.requiresDoublePeriod
         }]
       };
     }));
@@ -324,8 +326,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                 <button
                   onClick={() => setSubjectFilter('ALL')}
                   className={`px-3 py-1 text-xs rounded-full border transition-colors whitespace-nowrap ${subjectFilter === 'ALL'
-                      ? 'bg-gray-800 text-white border-gray-800'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                    ? 'bg-gray-800 text-white border-gray-800'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                     }`}
                 >
                   Всички
@@ -335,8 +337,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                     key={cat.id}
                     onClick={() => setSubjectFilter(cat.id)}
                     className={`px-3 py-1 text-xs rounded-full border transition-colors whitespace-nowrap ${subjectFilter === cat.id
-                        ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                       }`}
                   >
                     {cat.name}
@@ -466,6 +468,19 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                   </label>
 
                   <div className="flex items-center gap-2 ml-auto">
+                    <label className="flex items-center gap-2 cursor-pointer group mr-4" title="Ресурсен учител (работи с отделни ученици)">
+                      <div className="relative flex items-center">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={teacher.isResourceTeacher || false}
+                          onChange={(e) => updateTeacher(teacher.id, 'isResourceTeacher', e.target.checked)}
+                        />
+                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                      </div>
+                      <span className="text-xs text-gray-600 group-hover:text-purple-700 transition-colors">Ресурсен</span>
+                    </label>
+
                     <label className="text-xs text-gray-600">Макс. прозорци:</label>
                     <input
                       type="number"
@@ -811,8 +826,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                     <thead className="text-xs text-gray-500 uppercase bg-gray-50/50">
                       <tr>
                         <th className="px-3 py-2 w-[30%]">Предмет</th>
-                        <th className="px-3 py-2 w-[20%]">Хорариум</th>
-                        <th className="px-3 py-2 w-[40%]">Преподавател</th>
+                        <th className="px-3 py-2 w-[15%]">Хорариум</th>
+                        <th className="px-3 py-2 w-[15%]">Блок?</th>
+                        <th className="px-3 py-2 w-[30%]">Преподавател</th>
                         <th className="px-3 py-2 w-[10%] text-right">Действие</th>
                       </tr>
                     </thead>
@@ -841,6 +857,20 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                               </div>
                             </td>
                             <td className="px-3 py-2">
+                              <label className="flex items-center gap-2 cursor-pointer group" title="Изисквай сдвоен час (блок)">
+                                <div className="relative flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    className="peer sr-only"
+                                    checked={item.requiresDoublePeriod || false}
+                                    onChange={(e) => updateCurriculumItem(cls.id, item.subjectId, 'requiresDoublePeriod', e.target.checked)}
+                                  />
+                                  <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </div>
+                                <span className="text-[10px] text-gray-400 group-hover:text-indigo-600">Да</span>
+                              </label>
+                            </td>
+                            <td className="px-3 py-2">
                               <select
                                 className={`w-full border rounded px-2 py-1 text-sm ${!item.teacherId ? 'text-red-500 border-red-200 bg-red-50' : 'text-gray-700'}`}
                                 value={item.teacherId}
@@ -850,7 +880,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                                 {qualifiedTeachers.map(t => (
                                   <option key={t.id} value={t.id}>{t.name}</option>
                                 ))}
-                                {/* Allow assigning unqualified teachers but mark them? Or simply list all in a separate group? For now strict. */}
                               </select>
                               {qualifiedTeachers.length === 0 && (
                                 <div className="text-[10px] text-red-500 flex items-center gap-1 mt-1">
@@ -896,6 +925,17 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                             />
                           </td>
                           <td className="px-3 py-2">
+                            <label className="flex items-center gap-2 cursor-pointer" title="Изисквай сдвоен час (блок)">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                checked={newCurriculumState.requiresDoublePeriod}
+                                onChange={(e) => setNewCurriculumState({ ...newCurriculumState, requiresDoublePeriod: e.target.checked })}
+                              />
+                              <span className="text-xs text-gray-600">Блок</span>
+                            </label>
+                          </td>
+                          <td className="px-3 py-2">
                             <select
                               className="w-full border border-indigo-300 rounded px-2 py-1 text-sm"
                               value={newCurriculumState.teacherId}
@@ -916,7 +956,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                         </tr>
                       ) : (
                         <tr>
-                          <td colSpan={4} className="px-3 py-3 text-center border-t border-dashed border-gray-200">
+                          <td colSpan={5} className="px-3 py-3 text-center border-t border-dashed border-gray-200">
                             <button
                               onClick={() => startAddingCurriculum(cls.id)}
                               className="text-indigo-600 text-sm font-medium hover:text-indigo-800 flex items-center justify-center gap-1 mx-auto py-1 px-3 hover:bg-indigo-50 rounded transition-colors"

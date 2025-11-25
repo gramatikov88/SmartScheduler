@@ -100,7 +100,8 @@ export const generateScheduleWithGemini = async (
           subjectId: curr.subjectId,
           teacherId: curr.teacherId,
           hours: remainingHours,
-          roomType: subjects.find(s => s.id === curr.subjectId)?.requiresRoomType || 'Classroom'
+          roomType: subjects.find(s => s.id === curr.subjectId)?.requiresRoomType || 'Classroom',
+          requiresDoublePeriod: curr.requiresDoublePeriod
         };
       }).filter(item => item.hours > 0); // Remove satisfied subjects
 
@@ -149,20 +150,6 @@ export const generateScheduleWithGemini = async (
       - ЗАЕТИ СЛОТОВЕ (Existing Schedule): ${JSON.stringify(occupiedSlots)}
       - ОСТАВАЩ УЧЕБЕН ПЛАН (Tasks): ${JSON.stringify(simplifiedClasses)}
       - Кабинети: ${JSON.stringify(simplifiedRooms)}
-      - Учители: ${JSON.stringify(simplifiedTeachers)}
-
-      Правила (Hard Constraints):
-      1. НЕ слагай час, ако Учителят (t), Класът (c) или Кабинетът (r) вече присъстват в "ЗАЕТИ СЛОТОВЕ" за същия ден (d) и период (p).
-      2. Един клас/учител/кабинет може да бъде зает само веднъж в един период.
-      3. Спазвай капацитета на стаите и типа (roomType).
-      4. Учител с "travels: true" -> забрана за период 0.
-      5. Учител с "cannotTeachLast: true" -> забрана за период ${config.totalPeriods - 1}.
-      
-      Генерирай само липсващите часове от "ОСТАВАЩ УЧЕБЕН ПЛАН".
-      
-      Формат на отговора (JSON Array):
-      [
-        {
           "classGroupId": "string",
           "subjectId": "string",
           "teacherId": "string",
