@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -62,5 +62,34 @@ ipcMain.handle('write-file', async (event, filename, data) => {
   } catch (error) {
     console.error('Error writing file:', error);
     return false;
+  }
+});
+
+ipcMain.handle('save-project', async (event, data) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    filters: [{ name: 'SmartScheduler Project', extensions: ['json'] }]
+  });
+  if (canceled || !filePath) return false;
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Error saving project:', e);
+    return false;
+  }
+});
+
+ipcMain.handle('load-project', async (event) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'SmartScheduler Project', extensions: ['json'] }]
+  });
+  if (canceled || filePaths.length === 0) return null;
+  try {
+    const data = fs.readFileSync(filePaths[0], 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error loading project:', e);
+    return null;
   }
 });

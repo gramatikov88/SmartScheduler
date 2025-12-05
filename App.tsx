@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar, Settings, Grid, School, Sparkles, BrainCircuit, Loader2 } from 'lucide-react';
+import { Calendar, Settings, Grid, School, Sparkles, BrainCircuit, Loader2, Save, FolderOpen } from 'lucide-react';
 import SetupWizard from './components/SetupWizard';
 import Scheduler from './components/Scheduler';
 import { generatePeriods } from './constants';
@@ -19,6 +19,7 @@ const AppContent: React.FC = () => {
     config, setConfig,
     subjects, setSubjects,
     subjectCategories, setSubjectCategories,
+    saveProject, loadProject,
     loading
   } = useSchool();
 
@@ -131,6 +132,23 @@ const AppContent: React.FC = () => {
               }`}
           >
             <Calendar size={16} /> Програма
+          </button>
+
+          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+          <button
+            onClick={saveProject}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 transition-all"
+            title="Запази проект"
+          >
+            <Save size={16} /> Запази
+          </button>
+          <button
+            onClick={loadProject}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 transition-all"
+            title="Зареди проект"
+          >
+            <FolderOpen size={16} /> Зареди
           </button>
 
           <div className="w-px h-6 bg-gray-300 mx-1"></div>

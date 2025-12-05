@@ -18,6 +18,8 @@ interface SchoolContextType {
     setConfig: (config: SchoolConfig | ((prev: SchoolConfig) => SchoolConfig)) => void;
     setSubjects: (subjects: Subject[] | ((prev: Subject[]) => Subject[])) => void;
     setSubjectCategories: (categories: SubjectCategory[] | ((prev: SubjectCategory[]) => SubjectCategory[])) => void;
+    saveProject: () => Promise<void>;
+    loadProject: () => Promise<void>;
     loading: boolean;
 }
 
@@ -127,10 +129,54 @@ export const SchoolContextProvider: React.FC<{ children: React.ReactNode }> = ({
         });
     };
 
+    const saveProject = async () => {
+        const data = {
+            teachers,
+            rooms,
+            classes,
+            schedule,
+            config,
+            subjects,
+            subjectCategories
+        };
+        await storageService.saveProject(data);
+    };
+
+    const loadProject = async () => {
+        const data = await storageService.loadProject();
+        if (data) {
+            setLoading(true);
+            try {
+                if (data.teachers) setTeachersState(data.teachers);
+                if (data.rooms) setRoomsState(data.rooms);
+                if (data.classes) setClassesState(data.classes);
+                if (data.schedule) setScheduleState(data.schedule);
+                if (data.config) setConfigState(data.config);
+                if (data.subjects) setSubjectsState(data.subjects);
+                if (data.subjectCategories) setSubjectCategoriesState(data.subjectCategories);
+
+                // Also save to local storage/files individually to persist state
+                if (data.teachers) storageService.saveTeachers(data.teachers);
+                if (data.rooms) storageService.saveRooms(data.rooms);
+                if (data.classes) storageService.saveClasses(data.classes);
+                if (data.schedule) storageService.saveSchedule(data.schedule);
+                if (data.config) storageService.saveConfig(data.config);
+                if (data.subjects) storageService.saveSubjects(data.subjects);
+                if (data.subjectCategories) storageService.saveSubjectCategories(data.subjectCategories);
+
+            } catch (error) {
+                console.error("Error applying loaded project", error);
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
     return (
         <SchoolContext.Provider value={{
             teachers, rooms, classes, schedule, config, subjects, subjectCategories,
             setTeachers, setRooms, setClasses, setSchedule, setConfig, setSubjects, setSubjectCategories,
+            saveProject, loadProject,
             loading
         }}>
             {children}

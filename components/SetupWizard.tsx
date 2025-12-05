@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Teacher, Room, ClassGroup, Subject, RoomType, SubjectType, SchoolConfig, SubjectCategory } from '../types';
 import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle, Briefcase, Key } from 'lucide-react';
-import { generatePeriods } from '../constants';
+import { generatePeriods, SUBJECT_ASSIGNMENT_TYPES } from '../constants';
 
 interface SetupWizardProps {
   teachers: Teacher[];
@@ -50,11 +50,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
 
   // Curriculum Editing State
   const [addingCurriculumToClass, setAddingCurriculumToClass] = useState<string | null>(null);
-  const [newCurriculumState, setNewCurriculumState] = useState<{ subjectId: string, hours: number, teacherId: string, requiresDoublePeriod: boolean }>({
+  const [newCurriculumState, setNewCurriculumState] = useState<{ subjectId: string, hours: number, teacherId: string, requiresDoublePeriod: boolean, assignmentType: string }>({
     subjectId: '',
     hours: 2,
     teacherId: '',
-    requiresDoublePeriod: false
+    requiresDoublePeriod: false,
+    assignmentType: 'ООП'
   });
 
   // New Class Form State
@@ -209,7 +210,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
     setClasses(classes.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
-  const updateCurriculumItem = (classId: string, subjectId: string, field: 'hoursPerWeek' | 'teacherId' | 'requiresDoublePeriod', value: any) => {
+  const updateCurriculumItem = (classId: string, subjectId: string, field: 'hoursPerWeek' | 'teacherId' | 'requiresDoublePeriod' | 'assignmentType', value: any) => {
     setClasses(classes.map(c => {
       if (c.id !== classId) return c;
       const newCurriculum = c.curriculum.map(item =>
@@ -227,13 +228,15 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
   };
 
   const startAddingCurriculum = (classId: string) => {
-    // Find first subject not in class
+    // Find first subject not in class OR allow duplicates if we want to support multiple types for same subject
+    // For now, let's just pick the first subject available.
+    // We will allow adding same subject multiple times, so we don't filter out used subjects strictly.
     const currentClass = classes.find(c => c.id === classId);
     const usedSubjects = currentClass?.curriculum.map(c => c.subjectId) || [];
-    const availableSubject = subjects.find(s => !usedSubjects.includes(s.id));
+    const availableSubject = subjects.find(s => !usedSubjects.includes(s.id)) || subjects[0];
 
     if (!availableSubject) {
-      alert("Няма налични предмети за добавяне (всички са добавени).");
+      alert("Няма налични предмети.");
       return;
     }
 
@@ -242,7 +245,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
       subjectId: availableSubject.id,
       hours: 2,
       teacherId: '',
-      requiresDoublePeriod: false
+      requiresDoublePeriod: false,
+      assignmentType: 'ООП'
     });
   };
 
@@ -257,7 +261,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
           subjectId: newCurriculumState.subjectId,
           hoursPerWeek: newCurriculumState.hours,
           teacherId: newCurriculumState.teacherId, // Can be empty string if unassigned
-          requiresDoublePeriod: newCurriculumState.requiresDoublePeriod
+          requiresDoublePeriod: newCurriculumState.requiresDoublePeriod,
+          assignmentType: newCurriculumState.assignmentType
         }]
       };
     }));
@@ -825,10 +830,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs text-gray-500 uppercase bg-gray-50/50">
                       <tr>
-                        <th className="px-3 py-2 w-[30%]">Предмет</th>
-                        <th className="px-3 py-2 w-[15%]">Хорариум</th>
-                        <th className="px-3 py-2 w-[15%]">Блок?</th>
-                        <th className="px-3 py-2 w-[30%]">Преподавател</th>
+                        <th className="px-3 py-2 w-[25%]">Предмет</th>
+                        <th className="px-3 py-2 w-[20%]">Тип</th>
+                        <th className="px-3 py-2 w-[10%]">Хорариум</th>
+                        <th className="px-3 py-2 w-[10%]">Блок?</th>
+                        <th className="px-3 py-2 w-[25%]">Преподавател</th>
                         <th className="px-3 py-2 w-[10%] text-right">Действие</th>
                       </tr>
                     </thead>
@@ -843,6 +849,17 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                             <td className="px-3 py-2 font-medium text-gray-700">
                               {subject?.name}
                               <div className="text-[10px] text-gray-400">{getCategoryName(subject?.type || '')}</div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                className="w-full border rounded px-1 py-1 text-xs text-gray-600"
+                                value={item.assignmentType || 'ООП'}
+                                onChange={(e) => updateCurriculumItem(cls.id, item.subjectId, 'assignmentType', e.target.value)}
+                              >
+                                {Object.entries(SUBJECT_ASSIGNMENT_TYPES).map(([key, label]) => (
+                                  <option key={key} value={key} title={label}>{key}</option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1">
@@ -909,10 +926,34 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                               onChange={(e) => setNewCurriculumState({ ...newCurriculumState, subjectId: e.target.value, teacherId: '' })}
                             >
                               <option value="">Избери предмет...</option>
-                              {subjects
-                                .filter(s => !cls.curriculum.find(c => c.subjectId === s.id))
-                                .map(s => <option key={s.id} value={s.id}>{s.name} ({getCategoryName(s.type)})</option>)
-                              }
+                              {subjects.map(s => {
+                                const existingEntries = cls.curriculum.filter(c => c.subjectId === s.id);
+                                let label = `${s.name} (${getCategoryName(s.type)})`;
+                                let className = "";
+
+                                if (existingEntries.length > 0) {
+                                  const types = existingEntries.map(e => e.assignmentType || 'ООП').join(', ');
+                                  label += ` (Вече добавен като: ${types})`;
+                                  className = "text-indigo-600 font-bold bg-indigo-50";
+                                }
+
+                                return (
+                                  <option key={s.id} value={s.id} className={className}>
+                                    {label}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              className="w-full border border-indigo-300 rounded px-2 py-1 text-sm focus:ring-indigo-500"
+                              value={newCurriculumState.assignmentType}
+                              onChange={(e) => setNewCurriculumState({ ...newCurriculumState, assignmentType: e.target.value })}
+                            >
+                              {Object.entries(SUBJECT_ASSIGNMENT_TYPES).map(([key, label]) => (
+                                <option key={key} value={key} title={label}>{key} - {label.split('–')[1]?.trim() || label}</option>
+                              ))}
                             </select>
                           </td>
                           <td className="px-3 py-2">
@@ -956,7 +997,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                         </tr>
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-3 py-3 text-center border-t border-dashed border-gray-200">
+                          <td colSpan={6} className="px-3 py-3 text-center border-t border-dashed border-gray-200">
                             <button
                               onClick={() => startAddingCurriculum(cls.id)}
                               className="text-indigo-600 text-sm font-medium hover:text-indigo-800 flex items-center justify-center gap-1 mx-auto py-1 px-3 hover:bg-indigo-50 rounded transition-colors"

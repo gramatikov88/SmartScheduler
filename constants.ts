@@ -13,6 +13,56 @@ export const DEFAULT_SCHOOL_CONFIG: SchoolConfig = {
   customBreaks: {}
 };
 
+export const SUBJECT_ASSIGNMENT_TYPES: Record<string, string> = {
+  // Основни видове по учебен план (Раздели А, Б, В)
+  'ООП': 'ООП – Общообразователна подготовка',
+  'ИУЧ': 'ИУЧ – Избираеми учебни часове',
+  'ФУЧ': 'ФУЧ – Факултативни учебни часове',
+  'РП': 'РП – Разширена подготовка',
+  'ПП': 'ПП – Профилирана подготовка',
+
+  // Професионална подготовка
+  'ОПП': 'ОПП – Обща професионална подготовка',
+  'ОтрПП': 'ОтрПП – Отраслова професионална подготовка',
+  'СПП': 'СПП – Специфична професионална подготовка',
+  'РПП': 'РПП – Разширена професионална подготовка',
+  'УП': 'УП – Учебна практика',
+  'ПП_ПРАКТИКА': 'ПП – Производствена практика',
+  'ДУАЛНА': 'Обучение чрез работа (Дуална система)',
+
+  // Специализирана подготовка (Изкуства и Спорт)
+  'СпП': 'СпП – Специализирана подготовка',
+  'ИНДИВИДУАЛНА': 'Индивидуална подготовка (по инструмент/изкуство)',
+  'СПОРТ': 'Спортна подготовка',
+
+  // Задължителни и организационни часове
+  'ЧК': 'ЧК – Час на класа',
+  'ФВС_МОДУЛ': 'ФВС (Модул) – Спортни дейности',
+  'БДП': 'БДП – Безопасност на движението по пътищата',
+  'ГО': 'ГО – Гражданско образование',
+  'ЗК': 'ЗК – Защита при бедствия и аварии',
+
+  // Подкрепа и допълнително обучение
+  'КОНСУЛТ': 'Консултации',
+  'ДО': 'ДО – Допълнително обучение',
+  'ИУП': 'ИУП – Часове по индивидуален учебен план',
+  'РЕСУРСНО': 'Ресурсно подпомагане',
+  'ЛОГОПЕД': 'Логопедична помощ',
+  'ПСИХОЛОГ': 'Психологическа подкрепа',
+  'БГ_ИНТЕНЗИВНО': 'Интензивно изучаване на български език',
+  'КОРИГИРАЩИ': 'Коригиращи часове',
+
+  // Целодневна организация (ЦОУД)
+  'САМОПОДГОТОВКА': 'Самоподготовка',
+  'ЗИ': 'ЗИ – Занимания по интереси',
+  'ОФА': 'ОФА – Организиран отдих и физическа активност',
+
+  // Други форми
+  'ИД': 'ИД – Извънкласни дейности',
+  'ПРОЕКТ': 'Проектни дейности',
+  'МЕНТОР': 'Менторски часове'
+};
+
 export const DEFAULT_SUBJECT_CATEGORIES: SubjectCategory[] = [
   { id: SubjectType.HUMANITIES, name: 'Хуманитарни' },
   { id: SubjectType.STEM, name: 'STEM' },
@@ -29,21 +79,21 @@ export const generatePeriods = (config: SchoolConfig): string[] => {
   for (let i = 1; i <= config.totalPeriods; i++) {
     const startMins = currentMinutes;
     const endMins = startMins + config.lessonDuration;
-    
+
     // Format start
     const startH = Math.floor(startMins / 60).toString().padStart(2, '0');
     const startM = (startMins % 60).toString().padStart(2, '0');
-    
+
     // Format end
     const endH = Math.floor(endMins / 60).toString().padStart(2, '0');
     const endM = (endMins % 60).toString().padStart(2, '0');
-    
+
     periods.push(`${startH}:${startM} - ${endH}:${endM}`);
 
     // Add break logic
     // Priority: 1. Custom Break, 2. Long Break, 3. Standard Break
     let breakTime = config.breakDuration;
-    
+
     if (config.customBreaks[i] !== undefined) {
       breakTime = config.customBreaks[i];
     } else if (i === config.longBreakAfterPeriod) {
@@ -67,43 +117,43 @@ export const MOCK_SUBJECTS: Subject[] = [
 ];
 
 export const MOCK_TEACHERS: Teacher[] = [
-  { 
-    id: 't_ivanov', 
-    name: 'Иван Иванов', 
-    subjects: ['sub_math', 'sub_phys'], 
-    maxHoursPerDay: 6, 
+  {
+    id: 't_ivanov',
+    name: 'Иван Иванов',
+    subjects: ['sub_math', 'sub_phys'],
+    maxHoursPerDay: 6,
     unwantedDays: [],
     constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
   },
-  { 
-    id: 't_petrova', 
-    name: 'Мария Петрова', 
-    subjects: ['sub_bg', 'sub_hist'], 
-    maxHoursPerDay: 5, 
+  {
+    id: 't_petrova',
+    name: 'Мария Петрова',
+    subjects: ['sub_bg', 'sub_hist'],
+    maxHoursPerDay: 5,
     unwantedDays: [4], // No Fridays
     constraints: { travels: true, cannotTeachLast: true, maxGaps: 1 }
   },
-  { 
-    id: 't_georgiev', 
-    name: 'Георги Георгиев', 
-    subjects: ['sub_sport'], 
-    maxHoursPerDay: 7, 
+  {
+    id: 't_georgiev',
+    name: 'Георги Георгиев',
+    subjects: ['sub_sport'],
+    maxHoursPerDay: 7,
     unwantedDays: [],
     constraints: { travels: false, cannotTeachLast: false, maxGaps: 3 }
   },
-  { 
-    id: 't_dimitrova', 
-    name: 'Елена Димитрова', 
-    subjects: ['sub_eng'], 
-    maxHoursPerDay: 6, 
+  {
+    id: 't_dimitrova',
+    name: 'Елена Димитрова',
+    subjects: ['sub_eng'],
+    maxHoursPerDay: 6,
     unwantedDays: [],
     constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
   },
-  { 
-    id: 't_kolev', 
-    name: 'Николай Колев', 
-    subjects: ['sub_it'], 
-    maxHoursPerDay: 6, 
+  {
+    id: 't_kolev',
+    name: 'Николай Колев',
+    subjects: ['sub_it'],
+    maxHoursPerDay: 6,
     unwantedDays: [],
     constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
   },

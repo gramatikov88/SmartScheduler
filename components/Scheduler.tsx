@@ -47,24 +47,26 @@ const Scheduler: React.FC<SchedulerProps> = ({
   const unassignedLessons = useMemo(() => {
     if (!selectedClass) return [];
     const needed = selectedClass.curriculum.flatMap(c => {
-      // Find how many are already scheduled
+      // Find how many are already scheduled with this specific assignment type
       const scheduledCount = schedule.filter(s =>
         s.classGroupId === selectedClass.id &&
-        s.subjectId === c.subjectId
+        s.subjectId === c.subjectId &&
+        (s.assignmentType || 'ООП') === (c.assignmentType || 'ООП')
       ).length;
 
       const remaining = c.hoursPerWeek - scheduledCount;
       return Array(Math.max(0, remaining)).fill({
         subjectId: c.subjectId,
         teacherId: c.teacherId,
-        classGroupId: selectedClass.id
+        classGroupId: selectedClass.id,
+        assignmentType: c.assignmentType || 'ООП'
       });
     });
     return needed;
   }, [schedule, selectedClass]);
 
   // -- Helper: Detect Conflict Reason --
-  const getConflictReason = (day: number, period: number, teacherId: string, currentClassId: string, ignoreScheduleId?: string): string | null => {
+  const getConflictReason = (day: number, period: number, teacherId: string, currentClassId: string, subjectId: string, assignmentType: string = 'ООП', ignoreScheduleId?: string): string | null => {
     // 1. Teacher Constraints (Traveling / No First / No Last)
     const teacher = teachers.find(t => t.id === teacherId);
     if (teacher) {
@@ -143,6 +145,49 @@ const Scheduler: React.FC<SchedulerProps> = ({
       }
     }
 
+    // 5. FUCH before OOP Validation
+    // Rule: FUCH lessons cannot be scheduled BEFORE OOP lessons for the same subject/class
+    if (assignmentType === 'ФУЧ' || assignmentType === 'ООП') {
+      const isFuch = assignmentType === 'ФУЧ';
+
+      // Get all scheduled lessons for this class & subject
+      const subjectLessons = schedule.filter(s =>
+        s.classGroupId === currentClassId &&
+        s.subjectId === subjectId &&
+        s.id !== ignoreScheduleId
+      );
+
+      if (isFuch) {
+        // If placing a FUCH lesson, check if there are any OOP lessons scheduled AFTER this slot
+        // "After" means: (Same Day AND Later Period) OR (Later Day)
+        const oopAfter = subjectLessons.find(s =>
+          (s.assignmentType === 'ООП' || !s.assignmentType) && // Default to OOP if undefined
+          (
+            (s.dayIndex > day) ||
+            (s.dayIndex === day && s.periodIndex > period)
+          )
+        );
+
+        if (oopAfter) {
+          return `Невалидна подредба: ФУЧ не може да е преди ООП (ООП е в ${DAYS[oopAfter.dayIndex]}, ${oopAfter.periodIndex + 1}. час)`;
+        }
+      } else {
+        // If placing an OOP lesson, check if there are any FUCH lessons scheduled BEFORE this slot
+        // "Before" means: (Same Day AND Earlier Period) OR (Earlier Day)
+        const fuchBefore = subjectLessons.find(s =>
+          s.assignmentType === 'ФУЧ' &&
+          (
+            (s.dayIndex < day) ||
+            (s.dayIndex === day && s.periodIndex < period)
+          )
+        );
+
+        if (fuchBefore) {
+          return `Невалидна подредба: ООП не може да е след ФУЧ (ФУЧ е в ${DAYS[fuchBefore.dayIndex]}, ${fuchBefore.periodIndex + 1}. час)`;
+        }
+      }
+    }
+
     return null;
   };
 
@@ -155,7 +200,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
     for (let d = 0; d < DAYS.length; d++) {
       for (let p = 0; p < periods.length; p++) {
         // 1. Basic Constraints & Teacher/Class Availability
-        const reason = getConflictReason(d, p, teacherId, currentClassId, ignoreScheduleId);
+        const reason = getConflictReason(d, p, teacherId, currentClassId, subjectId, 'ООП', ignoreScheduleId); // Default to OOP for conflict map visualization if type unknown, but usually we know it
         if (reason) {
           conflicts[`${d}-${p}`] = reason;
           continue;
@@ -191,8 +236,12 @@ const Scheduler: React.FC<SchedulerProps> = ({
   // -- Drag Handlers --
   const handleDragStart = (e: React.DragEvent, item: DragItem) => {
     setDraggedItem(item);
+    setDraggedItem(item);
     // Calculate conflicts for this specific item immediately to visualize them
     const conflicts = getConflictMap(item.teacherId, item.classGroupId, item.subjectId, item.scheduleId);
+    // Note: getConflictMap currently doesn't take assignmentType fully into account for the map visualization 
+    // because we didn't pass it to getConflictMap signature yet, but we can improve this.
+    // For now, the critical check is in handleDrop.
     setConflictSlots(conflicts);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -228,7 +277,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
     if (!itemClass) return;
 
     // Hard Constraint Check: Is the slot actually available?
-    const conflictReason = getConflictReason(dayIndex, periodIndex, draggedItem.teacherId, draggedItem.classGroupId, draggedItem.scheduleId);
+    const conflictReason = getConflictReason(dayIndex, periodIndex, draggedItem.teacherId, draggedItem.classGroupId, draggedItem.subjectId, draggedItem.assignmentType, draggedItem.scheduleId);
 
     if (conflictReason) {
       alert(`Конфликт! ${conflictReason}`);
@@ -289,7 +338,8 @@ const Scheduler: React.FC<SchedulerProps> = ({
         roomId: availableRoom.id,
         dayIndex,
         periodIndex,
-        locked: false
+        locked: false,
+        assignmentType: draggedItem.assignmentType
       };
       setSchedule(prev => [...prev, newItem]);
     }
@@ -434,12 +484,18 @@ const Scheduler: React.FC<SchedulerProps> = ({
                       subjectId: item.subjectId,
                       teacherId: item.teacherId,
                       classGroupId: item.classGroupId,
+                      assignmentType: item.assignmentType,
                       duration: 1
                     })}
                     onDragEnd={handleDragEnd}
                     className="bg-white border border-l-4 border-l-indigo-500 border-gray-200 p-3 rounded shadow-sm cursor-move hover:shadow-md transition-all active:scale-95 select-none"
                   >
-                    <div className="font-semibold text-gray-800 text-sm">{subject?.name}</div>
+                    <div className="font-semibold text-gray-800 text-sm">
+                      {subject?.name}
+                      <span className="text-[10px] text-indigo-600 ml-1 bg-indigo-50 px-1 rounded border border-indigo-100">
+                        {item.assignmentType}
+                      </span>
+                    </div>
                     <div className="text-xs text-gray-500 flex justify-between mt-1">
                       <span>{teacher?.name}</span>
                     </div>
@@ -646,6 +702,7 @@ const Scheduler: React.FC<SchedulerProps> = ({
                             classGroupId: cellItem.classGroupId,
                             duration: 1,
                             scheduleId: cellItem.id,
+                            assignmentType: cellItem.assignmentType,
                             origin: { dayIndex: dIndex, periodIndex: pIndex }
                           })}
                           onDragEnd={handleDragEnd}
@@ -654,6 +711,11 @@ const Scheduler: React.FC<SchedulerProps> = ({
                           <div className="flex justify-between items-start">
                             <span className={`text-xs font-bold ${cellItem.locked ? 'text-gray-600' : 'text-indigo-900'} ${isConnectedTop ? 'opacity-50' : ''}`}>
                               {subject?.name}
+                              {cellItem.assignmentType && cellItem.assignmentType !== 'ООП' && (
+                                <span className="ml-1 text-[9px] bg-yellow-100 text-yellow-800 px-1 rounded border border-yellow-200" title="Вид подготовка">
+                                  {cellItem.assignmentType}
+                                </span>
+                              )}
                               {isConnectedTop && <span className="ml-1 text-[9px] opacity-60">(продължение)</span>}
                             </span>
                             <div className="flex gap-1">

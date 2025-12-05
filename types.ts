@@ -73,6 +73,7 @@ export interface ClassGroup {
     hoursPerWeek: number;
     teacherId: string; // Pre-assigned teacher for this class/subject
     requiresDoublePeriod?: boolean; // If true, requires at least one block of 2 consecutive periods
+    assignmentType?: string; // e.g. 'OOP', 'FUCH'
   }[];
 }
 
@@ -86,6 +87,7 @@ export interface ScheduleItem {
   periodIndex: number; // 0-6 (1st - 7th hour)
   locked: boolean;
   isResource?: boolean; // Flag to identify resource lessons
+  assignmentType?: string; // e.g. 'OOP', 'FUCH'
 }
 
 export interface GridSlot {
@@ -102,6 +104,7 @@ export interface DragItem {
   duration: number;
   origin?: GridSlot; // If moved from grid
   scheduleId?: string; // If existing
+  assignmentType?: string;
 }
 
 declare global {
@@ -109,6 +112,8 @@ declare global {
     electronAPI: {
       readFile: (filename: string) => Promise<any>;
       writeFile: (filename: string, data: any) => Promise<boolean>;
+      saveProject: (data: any) => Promise<boolean>;
+      loadProject: () => Promise<any>;
     };
   }
 }

@@ -94,5 +94,61 @@ export const storageService = {
     },
     async saveSubjectCategories(categories: SubjectCategory[]) {
         return this.save(STORAGE_KEYS.SUBJECT_CATEGORIES, categories);
+    },
+
+    // Project Save/Load
+    async saveProject(data: any): Promise<boolean> {
+        if (fileSystem) {
+            return fileSystem.saveProject(data);
+        } else {
+            // Web fallback: download JSON file
+            try {
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'school_schedule_project.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                return true;
+            } catch (e) {
+                console.error("Failed to save project", e);
+                return false;
+            }
+        }
+    },
+
+    async loadProject(): Promise<any> {
+        if (fileSystem) {
+            return fileSystem.loadProject();
+        } else {
+            // Web fallback: create file input
+            return new Promise((resolve) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = (e: any) => {
+                    const file = e.target.files[0];
+                    if (!file) {
+                        resolve(null);
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const result = JSON.parse(event.target?.result as string);
+                            resolve(result);
+                        } catch (err) {
+                            console.error("Error parsing JSON", err);
+                            resolve(null);
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            });
+        }
     }
 };
