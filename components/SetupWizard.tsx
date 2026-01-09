@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Teacher, Room, ClassGroup, Subject, RoomType, SubjectType, SchoolConfig, SubjectCategory } from '../types';
-import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle, Briefcase, Key } from 'lucide-react';
+import { Users, Layout, BookOpen, Trash2, Plus, Save, Filter, Clock, X, Library, Tag, Check, AlertCircle, Briefcase, Key, Pencil } from 'lucide-react';
 import { generatePeriods, SUBJECT_ASSIGNMENT_TYPES } from '../constants';
 
 interface SetupWizardProps {
@@ -38,6 +38,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectType, setNewSubjectType] = useState<string>(SubjectType.HUMANITIES);
   const [newSubjectDifficulty, setNewSubjectDifficulty] = useState(5);
+  const [newSubjectRoomType, setNewSubjectRoomType] = useState<RoomType | 'default'>('default');
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
   // New Category State
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -58,6 +60,26 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
     assignmentType: 'ООП'
   });
 
+  // Ensure all teachers have colors
+  React.useEffect(() => {
+    let hasChanges = false;
+    const colors = ['#e0f2fe', '#fce7f3', '#dcfce7', '#fef3c7', '#fae8ff', '#ffe4e6', '#ccfbf1', '#f3f4f6', '#fed7aa', '#d9f99d', '#bfdbfe', '#ddd6fe'];
+
+    const updatedTeachers = teachers.map((t, index) => {
+      if (!t.color) {
+        hasChanges = true;
+        return { ...t, color: colors[index % colors.length] };
+      }
+      return t;
+    });
+
+    if (hasChanges) {
+      setTeachers(updatedTeachers);
+    }
+  }, [teachers.length]); // Run when teachers count changes, or initially
+
+
+
   // New Class Form State
   const [isAddingClass, setIsAddingClass] = useState(false);
   const [newClassData, setNewClassData] = useState({
@@ -71,13 +93,17 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
   };
 
   const addTeacher = () => {
+    const colors = ['#e0f2fe', '#fce7f3', '#dcfce7', '#fef3c7', '#fae8ff', '#ffe4e6', '#ccfbf1', '#f3f4f6'];
+    const randomColor = colors[teachers.length % colors.length];
+
     const newTeacher: Teacher = {
       id: `t_${Date.now()}`,
       name: 'Нов Учител',
       subjects: [],
       maxHoursPerDay: 6,
       unwantedDays: [],
-      constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 }
+      constraints: { travels: false, cannotTeachLast: false, maxGaps: 2 },
+      color: randomColor
     };
     setTeachers([newTeacher, ...teachers]);
   };
@@ -102,15 +128,55 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
 
   const addSubject = () => {
     if (!newSubjectName.trim()) return;
-    const newSubject: Subject = {
-      id: `sub_${Date.now()}`,
-      name: newSubjectName,
-      type: newSubjectType,
-      difficulty: newSubjectDifficulty,
-    };
-    setSubjects([...subjects, newSubject]);
+
+    // Determine strict room requirement: 'default' means undefined/standard
+    const requiresRoom = newSubjectRoomType === 'default' ? undefined : newSubjectRoomType;
+
+    if (editingSubjectId) {
+      // Update existing
+      setSubjects(subjects.map(s => s.id === editingSubjectId ? {
+        ...s,
+        name: newSubjectName,
+        type: newSubjectType,
+        difficulty: newSubjectDifficulty,
+        requiresRoomType: requiresRoom
+      } : s));
+
+      setEditingSubjectId(null);
+    } else {
+      // Create new
+      const newSubject: Subject = {
+        id: `sub_${Date.now()}`,
+        name: newSubjectName,
+        type: newSubjectType,
+        difficulty: newSubjectDifficulty,
+        requiresRoomType: requiresRoom
+      };
+      setSubjects([...subjects, newSubject]);
+    }
+
+    // Reset form
     setNewSubjectName('');
     setNewSubjectDifficulty(5);
+    setNewSubjectRoomType('default');
+  };
+
+  const startEditingSubject = (subject: Subject) => {
+    setEditingSubjectId(subject.id);
+    setNewSubjectName(subject.name);
+    setNewSubjectType(subject.type);
+    setNewSubjectDifficulty(subject.difficulty);
+    setNewSubjectRoomType(subject.requiresRoomType || 'default');
+
+    // Scroll to form (optional UX)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditingSubject = () => {
+    setEditingSubjectId(null);
+    setNewSubjectName('');
+    setNewSubjectDifficulty(5);
+    setNewSubjectRoomType('default');
   };
 
   const deleteSubject = (id: string) => {
@@ -121,6 +187,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
         ...t,
         subjects: t.subjects.filter(sId => sId !== id)
       })));
+
+      if (editingSubjectId === id) {
+        cancelEditingSubject();
+      }
     }
   };
 
@@ -270,6 +340,20 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
     setAddingCurriculumToClass(null);
   };
 
+  const getTeacherColor = (id: string) => teachers.find(t => t.id === id)?.color || '#e5e7eb';
+
+  const calculateTeacherWorkload = (teacherId: string) => {
+    let total = 0;
+    classes.forEach(c => {
+      c.curriculum.forEach(curr => {
+        if (curr.teacherId === teacherId) {
+          total += curr.hoursPerWeek;
+        }
+      });
+    });
+    return total;
+  };
+
   const previewPeriods = generatePeriods(schoolConfig);
 
   return (
@@ -357,79 +441,67 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                 <div className="flex flex-col md:flex-row gap-4 items-start md:items-center w-full">
                   <div className="flex-1">
                     <label className="text-xs text-gray-500 font-semibold uppercase">Име</label>
-                    <input
-                      type="text"
-                      value={teacher.name}
-                      onChange={(e) => updateTeacher(teacher.id, 'name', e.target.value)}
-                      className="w-full mt-1 px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={teacher.color || '#e0f2fe'}
+                        onChange={(e) => updateTeacher(teacher.id, 'color', e.target.value)}
+                        className="h-[42px] w-[50px] p-1 border rounded-md cursor-pointer"
+                        title="Цвят на учителя в графика"
+                      />
+                      <input
+                        type="text"
+                        value={teacher.name}
+                        onChange={(e) => updateTeacher(teacher.id, 'name', e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                        style={{ borderLeftColor: teacher.color || '#e5e7eb', borderLeftWidth: '4px' }}
+                      />
+                    </div>
                   </div>
                   <div className="w-32">
-                    <label className="text-xs text-gray-500 font-semibold uppercase">Макс. часове</label>
-                    <input
-                      type="number"
-                      value={teacher.maxHoursPerDay}
-                      onChange={(e) => updateTeacher(teacher.id, 'maxHoursPerDay', parseInt(e.target.value))}
-                      className="w-full mt-1 px-3 py-2 border rounded-md"
-                    />
+                    <label className="text-xs text-gray-500 font-semibold uppercase text-indigo-600" title="Общ брой часове за седмицата">Часове / Седмица</label>
+                    <div className="w-full mt-1 px-3 py-2 border rounded-md bg-indigo-50 text-indigo-700 font-bold text-center">
+                      {calculateTeacherWorkload(teacher.id)}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-[300px] relative">
-                    <label className="text-xs text-gray-500 font-semibold uppercase">
+                  <div className="flex-1 min-w-[300px]">
+                    <label className="text-xs text-gray-500 font-semibold uppercase mb-2 block">
                       Квалификация {subjectFilter !== 'ALL' && `(${getCategoryName(subjectFilter)})`}
                     </label>
-                    <div className="flex flex-wrap gap-1 mt-1">
+
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 border rounded-lg p-2 max-h-60 overflow-y-auto bg-white shadow-inner">
                       {subjects
-                        .filter(sub => teacher.subjects.includes(sub.id))
                         .filter(sub => subjectFilter === 'ALL' || sub.type === subjectFilter)
-                        .map(sub => (
-                          <button
-                            key={sub.id}
-                            onClick={() => {
-                              const newSubjects = teacher.subjects.filter(s => s !== sub.id);
-                              updateTeacher(teacher.id, 'subjects', newSubjects);
-                            }}
-                            className={`text-xs px-2 py-1 rounded-full border transition-colors bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-red-100 hover:text-red-700 hover:border-red-200`}
-                          >
-                            {sub.name}
-                          </button>
-                        ))}
-
-                      {/* Plus Button to Add New Qualification */}
-                      <button
-                        onClick={() => setAddingSubjectToTeacher(addingSubjectToTeacher === teacher.id ? null : teacher.id)}
-                        className="text-xs px-2 py-1 rounded-full border border-dashed border-gray-400 text-gray-600 hover:bg-white hover:border-indigo-500 hover:text-indigo-600 flex items-center gap-1 transition-all"
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
-
-                    {/* Dropdown for adding subjects */}
-                    {addingSubjectToTeacher === teacher.id && (
-                      <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 max-h-64 overflow-y-auto">
-                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
-                          <span className="text-xs font-bold text-gray-700">Добави квалификация</span>
-                          <button onClick={() => setAddingSubjectToTeacher(null)} className="text-gray-400 hover:text-gray-700"><X size={14} /></button>
-                        </div>
-                        <div className="space-y-1">
-                          {subjects
-                            .filter(s => !teacher.subjects.includes(s.id))
-                            .map(sub => (
-                              <button
-                                key={sub.id}
-                                onClick={() => {
-                                  updateTeacher(teacher.id, 'subjects', [...teacher.subjects, sub.id]);
-                                  setAddingSubjectToTeacher(null);
+                        .map(sub => {
+                          const isAssigned = teacher.subjects.includes(sub.id);
+                          return (
+                            <label key={sub.id} className={`flex items-center gap-2 p-2 rounded-md text-xs cursor-pointer transition-all border select-none h-full ${isAssigned ? 'bg-indigo-50 border-indigo-200 text-indigo-900 ring-1 ring-indigo-500 shadow-sm' : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50 text-gray-600'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    updateTeacher(teacher.id, 'subjects', [...teacher.subjects, sub.id]);
+                                  } else {
+                                    updateTeacher(teacher.id, 'subjects', teacher.subjects.filter(s => s !== sub.id));
+                                  }
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-indigo-50 text-gray-700 flex justify-between group"
-                              >
-                                <span>{sub.name}</span>
-                                <span className="text-gray-400 group-hover:text-indigo-400 text-[10px]">{getCategoryName(sub.type)}</span>
-                              </button>
-                            ))
-                          }
+                                className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 w-4 h-4 flex-shrink-0"
+                              />
+                              <div className="flex flex-col leading-tight overflow-hidden">
+                                <span className="font-medium truncate" title={sub.name}>{sub.name}</span>
+                                <span className="text-[10px] text-gray-400 truncate">{getCategoryName(sub.type)}</span>
+                              </div>
+                            </label>
+                          );
+                        })
+                      }
+                      {subjects.length === 0 && (
+                        <div className="col-span-full text-center text-gray-400 text-xs py-4">
+                          Няма добавени предмети. Отидете в таб "Предмети & Типове".
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                   <button
                     onClick={() => setTeachers(teachers.filter(t => t.id !== teacher.id))}
@@ -508,8 +580,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
               <h2 className="text-lg font-semibold text-gray-800">Управление на Предмети</h2>
 
               {/* Create Subject Form */}
-              <div className="p-5 bg-gray-50 border rounded-xl shadow-sm">
-                <h3 className="text-sm font-bold text-gray-700 uppercase mb-4">Добави нов предмет</h3>
+              <div className="p-5 bg-gray-50 border rounded-xl shadow-sm relative transition-all border-l-4 border-l-indigo-600">
+                <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 flex items-center justify-between">
+                  <span>{editingSubjectId ? 'Редактиране на предмет' : 'Добави нов предмет'}</span>
+                  {editingSubjectId && (
+                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Режим редакция</span>
+                  )}
+                </h3>
                 <div className="flex flex-col gap-4">
                   <div className="w-full">
                     <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Име на предмета</label>
@@ -521,7 +598,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
                     />
                   </div>
-                  <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex-1 w-full">
                       <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Тип (Категория)</label>
                       <select
@@ -534,7 +611,22 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                         ))}
                       </select>
                     </div>
-                    <div className="w-full md:w-40">
+
+                    <div className="flex-1 w-full">
+                      <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Изисква кабинет (избираемо)</label>
+                      <select
+                        value={newSubjectRoomType}
+                        onChange={(e) => setNewSubjectRoomType(e.target.value as RoomType | 'default')}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      >
+                        <option value="default">Стандартен (Без значение)</option>
+                        {Object.entries(ROOM_TYPE_LABELS).map(([key, label]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="w-full">
                       <label className="text-xs text-gray-500 font-semibold mb-1.5 block">Сложност (1-10)</label>
                       <input
                         type="number"
@@ -545,11 +637,23 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {editingSubjectId && (
+                      <button
+                        onClick={cancelEditingSubject}
+                        className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                      >
+                        Откажи
+                      </button>
+                    )}
                     <button
                       onClick={addSubject}
-                      className="w-full md:w-auto px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2 shadow-sm font-medium transition-colors"
+                      className={`flex-1 px-6 py-2.5 ${editingSubjectId ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white rounded-lg flex items-center justify-center gap-2 shadow-sm font-medium transition-colors`}
                     >
-                      <Plus size={18} /> Добави
+                      {editingSubjectId ? <Save size={18} /> : <Plus size={18} />}
+                      {editingSubjectId ? 'Запази промените' : 'Добави'}
                     </button>
                   </div>
                 </div>
@@ -558,21 +662,36 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
               {/* Subjects List */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {subjects.map(subject => (
-                  <div key={subject.id} className="p-3 border rounded-lg bg-white shadow-sm flex justify-between items-center group">
-                    <div>
+                  <div key={subject.id} className="p-3 border rounded-lg bg-white shadow-sm flex justify-between items-center group relative hover:border-indigo-300 transition-colors">
+                    <div className="flex-1 cursor-pointer" onClick={() => startEditingSubject(subject)} title="Кликни за редакция">
                       <div className="font-bold text-gray-800">{subject.name}</div>
-                      <div className="flex gap-2 mt-1">
+                      <div className="flex flex-wrap gap-2 mt-1">
                         <span className="text-[10px] px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">{getCategoryName(subject.type)}</span>
                         <span className="text-[10px] px-2 py-0.5 bg-orange-50 rounded-full text-orange-600">Сложност: {subject.difficulty}</span>
+                        {subject.requiresRoomType && (
+                          <span className="text-[10px] px-2 py-0.5 bg-purple-50 rounded-full text-purple-600 border border-purple-100">
+                            🏠 {ROOM_TYPE_LABELS[subject.requiresRoomType] || subject.requiresRoomType}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => deleteSubject(subject.id)}
-                      className="text-gray-300 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Изтрий предмет"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => startEditingSubject(subject)}
+                        className="text-gray-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded"
+                        title="Редактирай"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => deleteSubject(subject.id)}
+                        className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded"
+                        title="Изтрий"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -982,6 +1101,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({
                               value={newCurriculumState.teacherId}
                               onChange={(e) => setNewCurriculumState({ ...newCurriculumState, teacherId: e.target.value })}
                               disabled={!newCurriculumState.subjectId}
+                              style={{
+                                borderLeftColor: getTeacherColor(newCurriculumState.teacherId),
+                                borderLeftWidth: '4px'
+                              }}
                             >
                               <option value="">-- Избери учител --</option>
                               {teachers

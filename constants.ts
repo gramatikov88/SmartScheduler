@@ -9,7 +9,7 @@ export const DEFAULT_SCHOOL_CONFIG: SchoolConfig = {
   breakDuration: 10,
   longBreakDuration: 20,
   longBreakAfterPeriod: 3, // After 3rd period
-  totalPeriods: 7,
+  totalPeriods: 8,
   customBreaks: {}
 };
 

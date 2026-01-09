@@ -46,6 +46,7 @@ export interface Teacher {
   unwantedDays: number[]; // 0=Mon, 4=Fri
   constraints: TeacherConstraints;
   isResourceTeacher?: boolean; // New flag for Resource Teachers
+  color?: string; // Teacher specific color
 }
 
 export interface Room {
